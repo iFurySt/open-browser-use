@@ -377,7 +377,17 @@ class BrowserBackend {
         userTabsToRelease.push(tab.id);
       }
     }
-    await this.detachMany([...agentTabsToClose, ...userTabsToRelease, ...deliverableTabs]);
+    // Detach every disposition, including handoff tabs we keep alive: leaving a
+    // tab attached keeps Chrome's "started debugging this browser" banner up
+    // after the turn ends. The debugger re-attaches lazily on the next CDP call
+    // (the CLI runner and background handlers attach on demand), so dropping it
+    // here is loss-free while clearing the banner.
+    await this.detachMany([
+      ...agentTabsToClose,
+      ...userTabsToRelease,
+      ...deliverableTabs,
+      ...handoffTabs
+    ]);
     if (agentTabsToClose.length > 0) {
       await chrome.tabs.remove(agentTabsToClose.length === 1 ? agentTabsToClose[0] : agentTabsToClose);
     }

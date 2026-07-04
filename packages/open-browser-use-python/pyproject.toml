@@ -1,6 +1,6 @@
 [project]
 name = "open-browser-use-sdk"
-version = "0.1.40"
+version = "0.1.41"
 description = "Python SDK for Open Browser Use."
 readme = "README.md"
 requires-python = ">=3.10"
