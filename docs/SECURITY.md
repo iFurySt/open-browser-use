@@ -61,8 +61,11 @@ Users must understand that installing and enabling an extension allows Open Brow
 
 The Zen manifest omits unsupported `debugger` and `tabGroups` permissions. It
 still has broad tab, history, download, scripting, storage, and Native Messaging
-access. Its native manifest must keep `allowed_extensions` restricted to the
-stable Open Browser Use Gecko id.
+access. Dynamic page evaluation additionally uses Firefox's optional-only
+`userScripts` permission. The user grants it once from the extension popup; the
+adapter executes automation expressions in an isolated `USER_SCRIPT` world so
+websites cannot access the extension context. Its native manifest must keep
+`allowed_extensions` restricted to the stable Open Browser Use Gecko id.
 
 ## Clipboard, Downloads, And Files
 

@@ -2,11 +2,11 @@
   "manifest_version": 3,
   "name": "Open Browser Use",
   "description": "Open Browser Use automation extension for Zen Browser and Firefox.",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "browser_specific_settings": {
     "gecko": {
       "id": "open-browser-use@ifuryst.com",
-      "strict_min_version": "128.0"
+      "strict_min_version": "136.0"
     }
   },
   "icons": {
@@ -31,6 +31,7 @@
     "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self';"
   },
   "host_permissions": ["<all_urls>"],
+  "optional_permissions": ["userScripts"],
   "web_accessible_resources": [
     {
       "resources": ["images/cursor-chat.png"],

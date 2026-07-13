@@ -198,7 +198,12 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   位置。Firefox 不实现 Chrome WebExtension debugger API，因此 adapter 只兼容
   `Page.navigate`、`Page.reload`、`Page.close`、`Runtime.evaluate`、
   `Target.getTargets` 和基础 enable/version 调用；其他 CDP method 返回明确的
-  unsupported error，file chooser 本地路径注入也不可用。Zen 无 tab group API，
+  unsupported error，file chooser 本地路径注入也不可用。`Runtime.evaluate`
+  使用 Firefox MV3 user-script API 在隔离的 `USER_SCRIPT` world 中运行：
+  Firefox 136–152 通过已注册 bridge 执行，Firefox 153+ 可直接使用
+  `userScripts.execute`。这允许 DOM 读取和表单交互而不依赖网站 CSP；
+  `userScripts` 是一次性、全局的 optional-only permission，由用户在 popup 中
+  明确授予。Zen 无 tab group API，
   session membership 改由 extension storage 的 tab origin map 维护。
 - Session state persists the Chrome tab group id, tab origins, group title,
   deliverable group id, and logical active tab id in `chrome.storage.local` so
