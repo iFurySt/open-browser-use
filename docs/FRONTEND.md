@@ -15,6 +15,8 @@ Open Browser Use 当前共享一套 Chrome/Zen extension 工具界面。
 这个 popup 是工具面，不是 landing page。设计上优先保持状态清楚、权限边界
 明确、操作少而直接。popup 会展示当前 extension 版本，并根据浏览器平台检测结果
 显示 CLI 安装命令：macOS 展示 npm 和 Homebrew，Windows/Linux 展示 npm。
+Zen popup 还会显示全局 page interaction 权限状态；未授权时提供一次性启用按钮，
+Chrome manifest 不声明该 optional permission，因此 Chrome popup 不显示此面板。
 
 ## 验证方式
 

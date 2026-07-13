@@ -37,13 +37,19 @@ if (manifest.version !== sharedManifest.version) errors.push("Zen and Chrome ext
 if (manifest.browser_specific_settings?.gecko?.id !== "open-browser-use@ifuryst.com") {
   errors.push("browser_specific_settings.gecko.id must be stable");
 }
+if (Number.parseFloat(manifest.browser_specific_settings?.gecko?.strict_min_version) < 136) {
+  errors.push("Zen strict_min_version must support Firefox MV3 user scripts (136+)");
+}
 if (!manifest.background?.scripts?.includes("firefox-compat.js")) {
   errors.push("background.scripts must load firefox-compat.js");
 }
 if (manifest.permissions?.includes("debugger") || manifest.permissions?.includes("tabGroups")) {
   errors.push("Zen manifest must not request unsupported Chrome permissions");
 }
-for (const file of ["manifest.json", "firefox-compat.js"]) {
+if (!manifest.optional_permissions?.includes("userScripts")) {
+  errors.push("Zen manifest must declare userScripts as an optional permission");
+}
+for (const file of ["manifest.json", "firefox-compat.js", "user-script-bridge.js"]) {
   if (!fs.existsSync(path.join(extensionDir, file))) errors.push(`missing Zen extension file: ${file}`);
 }
 for (const file of ["background.js", "content-cursor.js", "popup.html", "popup.css", "popup.js"]) {
@@ -56,6 +62,7 @@ if (errors.length > 0) {
 NODE
 
 node --check "${extension_dir}/firefox-compat.js" >&2
+node --check "${extension_dir}/user-script-bridge.js" >&2
 node --check "${shared_dir}/background.js" >&2
 
 rm -rf "${dist_dir}"
@@ -64,6 +71,7 @@ mkdir -p "${staging_dir}/icons" "${staging_dir}/images"
 
 cp "${manifest_path}" "${staging_dir}/manifest.json"
 cp "${extension_dir}/firefox-compat.js" "${staging_dir}/firefox-compat.js"
+cp "${extension_dir}/user-script-bridge.js" "${staging_dir}/user-script-bridge.js"
 for file in background.js content-cursor.js popup.html popup.css popup.js; do
   cp "${shared_dir}/${file}" "${staging_dir}/${file}"
 done

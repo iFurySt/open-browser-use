@@ -1,35 +1,178 @@
 /* global chrome */
 
-async function evaluateInTab(browserApi, tabId, expression, awaitPromise) {
-  const results = await browserApi.scripting.executeScript({
-    target: { tabId },
-    func: async (source, shouldAwait) => {
-      try {
-        let value = globalThis.eval(source);
-        if (shouldAwait && value && typeof value.then === "function") {
-          value = await value;
+const FIREFOX_USER_SCRIPT_ID = "open-browser-use-page-bridge";
+const FIREFOX_USER_SCRIPT_WORLD = "open-browser-use";
+const FIREFOX_USER_SCRIPT_PORT = "open-browser-use-page-bridge";
+const FIREFOX_EVALUATION_TIMEOUT_MS = 15000;
+const firefoxUserScriptPorts = new Map();
+const firefoxPendingEvaluations = new Map();
+let firefoxEvaluationId = 0;
+let firefoxUserScriptListenersRegistered = false;
+let firefoxUserScriptSetupPromise;
+
+async function evaluateInTab(browserApi, tabId, expression) {
+  if (browserApi.userScripts?.execute) {
+    const results = await browserApi.userScripts.execute({
+      target: { tabId },
+      js: [{ code: `${expression}\n` }],
+      world: "USER_SCRIPT",
+      worldId: FIREFOX_USER_SCRIPT_WORLD,
+      injectImmediately: true
+    });
+    const outcome = results?.[0]?.result;
+    const error = results?.[0]?.error;
+    if (error != null) {
+      return {
+        exceptionDetails: {
+          text: typeof error === "string" ? error : String(error)
         }
-        return { ok: true, value };
-      } catch (error) {
-        return {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    },
-    args: [expression, awaitPromise === true]
-  });
-  const outcome = results?.[0]?.result;
-  if (!outcome?.ok) {
+      };
+    }
+    return {
+      result: remoteObject(outcome)
+    };
+  }
+
+  const port = firefoxUserScriptPorts.get(tabId);
+  if (!port) {
     return {
       exceptionDetails: {
-        text: outcome?.error ?? "JavaScript evaluation failed"
+        text:
+          "Page interaction is not ready for this tab. Enable page interaction in the " +
+          "Open Browser Use popup, then reload this tab once."
       }
     };
   }
-  return {
-    result: remoteObject(outcome.value)
-  };
+
+  const id = ++firefoxEvaluationId;
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      firefoxPendingEvaluations.delete(id);
+      resolve({ exceptionDetails: { text: "JavaScript evaluation timed out" } });
+    }, FIREFOX_EVALUATION_TIMEOUT_MS);
+    firefoxPendingEvaluations.set(id, { resolve, timeout, tabId });
+    try {
+      port.postMessage({ type: "OPEN_BROWSER_USE_EVALUATE", id, expression });
+    } catch (error) {
+      clearTimeout(timeout);
+      firefoxPendingEvaluations.delete(id);
+      resolve({
+        exceptionDetails: { text: error instanceof Error ? error.message : String(error) }
+      });
+    }
+  });
+}
+
+function handleFirefoxUserScriptResult(message, tabId) {
+  if (message?.type !== "OPEN_BROWSER_USE_EVALUATE_RESULT" || !Number.isInteger(message.id)) {
+    return;
+  }
+  const pending = firefoxPendingEvaluations.get(message.id);
+  if (!pending || pending.tabId !== tabId) {
+    return;
+  }
+  clearTimeout(pending.timeout);
+  firefoxPendingEvaluations.delete(message.id);
+  pending.resolve(
+    message.ok === true
+      ? { result: remoteObject(message.value) }
+      : { exceptionDetails: { text: message.error ?? "JavaScript evaluation failed" } }
+  );
+}
+
+function registerFirefoxUserScriptListeners(browserApi) {
+  if (firefoxUserScriptListenersRegistered || !browserApi.runtime?.onUserScriptConnect) {
+    return;
+  }
+  firefoxUserScriptListenersRegistered = true;
+  browserApi.runtime.onUserScriptConnect.addListener((port) => {
+    const tabId = port.sender?.tab?.id;
+    if (
+      port.name !== FIREFOX_USER_SCRIPT_PORT ||
+      port.sender?.userScriptWorldId !== FIREFOX_USER_SCRIPT_WORLD ||
+      !Number.isInteger(tabId)
+    ) {
+      port.disconnect();
+      return;
+    }
+    firefoxUserScriptPorts.set(tabId, port);
+    port.onMessage.addListener((message) => handleFirefoxUserScriptResult(message, tabId));
+    port.onDisconnect.addListener(() => {
+      if (firefoxUserScriptPorts.get(tabId) === port) {
+        firefoxUserScriptPorts.delete(tabId);
+      }
+    });
+  });
+}
+
+async function ensureFirefoxUserScriptBridge(browserApi) {
+  if (!browserApi.userScripts?.register || !browserApi.userScripts?.configureWorld) {
+    throw new Error(
+      "This Zen version does not support Firefox MV3 user scripts (Firefox 136+ required)."
+    );
+  }
+  if (firefoxUserScriptSetupPromise) {
+    return firefoxUserScriptSetupPromise;
+  }
+  firefoxUserScriptSetupPromise = (async () => {
+    registerFirefoxUserScriptListeners(browserApi);
+    await browserApi.userScripts.configureWorld({
+      worldId: FIREFOX_USER_SCRIPT_WORLD,
+      csp: "script-src 'self' 'unsafe-eval'; object-src 'none';",
+      messaging: true
+    });
+    const scripts = await browserApi.userScripts.getScripts({ ids: [FIREFOX_USER_SCRIPT_ID] });
+    if (scripts.length === 0) {
+      await browserApi.userScripts.register([
+        {
+          id: FIREFOX_USER_SCRIPT_ID,
+          matches: ["<all_urls>"],
+          js: [{ file: "user-script-bridge.js" }],
+          runAt: "document_start",
+          world: "USER_SCRIPT",
+          worldId: FIREFOX_USER_SCRIPT_WORLD
+        }
+      ]);
+    }
+  })();
+  try {
+    await firefoxUserScriptSetupPromise;
+  } catch (error) {
+    firefoxUserScriptSetupPromise = undefined;
+    throw error;
+  }
+}
+
+function initializeFirefoxUserScripts(browserApi) {
+  browserApi.permissions?.onAdded?.addListener((permissions) => {
+    if (permissions.permissions?.includes("userScripts")) {
+      void ensureFirefoxUserScriptBridge(browserApi).catch(() => {});
+    }
+  });
+  browserApi.permissions?.onRemoved?.addListener((permissions) => {
+    if (permissions.permissions?.includes("userScripts")) {
+      firefoxUserScriptSetupPromise = undefined;
+      firefoxUserScriptPorts.clear();
+    }
+  });
+  browserApi.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== "ENABLE_OPEN_BROWSER_USE_PAGE_INTERACTION") {
+      return false;
+    }
+    void ensureFirefoxUserScriptBridge(browserApi).then(
+      () => sendResponse({ ok: true }),
+      (error) => sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })
+    );
+    return true;
+  });
+  void browserApi.permissions?.contains?.({ permissions: ["userScripts"] }).then((granted) => {
+    if (granted) {
+      void ensureFirefoxUserScriptBridge(browserApi).catch(() => {});
+    }
+  });
 }
 
 function remoteObject(value) {
@@ -79,8 +222,7 @@ async function executeFirefoxCommand(browserApi, target, method, commandParams) 
       return evaluateInTab(
         browserApi,
         tabId,
-        commandParams.expression,
-        commandParams.awaitPromise
+        commandParams.expression
       );
     case "Target.getTargets": {
       const tabs = await browserApi.tabs.query({});
@@ -112,3 +254,8 @@ async function executeFirefoxCommand(browserApi, target, method, commandParams) 
 
 globalThis.openBrowserUseFirefoxExecuteCommand = executeFirefoxCommand;
 globalThis.openBrowserUseFirefoxRemoteObject = remoteObject;
+globalThis.openBrowserUseFirefoxInitializeUserScripts = initializeFirefoxUserScripts;
+
+if (globalThis.chrome) {
+  initializeFirefoxUserScripts(chrome);
+}

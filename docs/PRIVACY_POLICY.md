@@ -15,6 +15,10 @@ used, this can include personally identifiable information, authentication
 information, personal communications, financial information, health information,
 location information, web history, user activity, and website content.
 
+On Zen Browser, reading and interacting with page content requires a one-time
+optional page interaction permission. The permission applies globally to
+ordinary websites and can be revoked from Zen's extension permissions UI.
+
 ## How data is used
 
 Data is used only to provide the extension's core browser automation bridge:

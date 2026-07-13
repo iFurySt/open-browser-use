@@ -70,6 +70,11 @@ open-browser-use profiles --connected
 open-browser-use info --browser zen
 ```
 
+Open the Open Browser Use extension popup once and choose **Enable page
+interaction**. Zen asks for one global `userScripts` permission; after it is
+granted, it persists across ordinary websites and browser restarts rather than
+prompting for each site.
+
 Zen is Firefox-based, so it does not expose Chrome's extension debugger API.
 The Zen route supports tabs, history, navigation, page information, JavaScript
 evaluation, downloads, clipboard helpers, cursor movement, and session cleanup.

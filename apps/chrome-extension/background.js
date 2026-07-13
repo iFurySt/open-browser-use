@@ -342,7 +342,8 @@ class BrowserBackend {
       metadata: {
         extensionId: chrome.runtime.id,
         extensionInstanceId,
-        extensionOrigin: chrome.runtime.getURL(""),
+        extensionOrigin:
+          typeof chrome.runtime.getURL === "function" ? chrome.runtime.getURL("") : undefined,
         nativeHostName: NATIVE_HOST_NAME
       }
     };
