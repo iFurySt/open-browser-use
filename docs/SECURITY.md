@@ -1,12 +1,13 @@
 # Security Policy
 
-Open Browser Use connects automation clients to the user's real Chrome profile through a Chrome extension, Chrome Native Messaging, and a local native host. Treat it as local browser control infrastructure, not as a sandbox boundary.
+Open Browser Use connects automation clients to the user's real Chrome or Zen profile through a browser extension, Native Messaging, and a local native host. Treat it as local browser control infrastructure, not as a sandbox boundary.
 
 ## Supported Scope
 
-Security fixes are expected to cover the current Chrome route:
+Security fixes are expected to cover the current Chrome and Zen routes:
 
 - MV3 Chrome extension under `apps/chrome-extension/`.
+- Zen/Firefox manifest and compatibility adapter under `apps/zen-extension/`.
 - Go native host and CLI under `cmd/open-browser-use/` and `internal/`.
 - JavaScript and Python SDK packages under `packages/`.
 - Installer, manifest, release, and skill documentation that affects how users enable browser control.
@@ -46,7 +47,7 @@ The Go native host bridges Chrome Native Messaging stdio to a local Unix socket.
 
 Planned hardening includes client tokens, peer validation, safer stale-socket handling, and security-focused failure-path tests.
 
-## Chrome Extension Permissions
+## Browser Extension Permissions
 
 The MV3 extension uses high-privilege Chrome APIs because browser control requires them:
 
@@ -56,7 +57,12 @@ The MV3 extension uses high-privilege Chrome APIs because browser control requir
 - `downloads` for download observation.
 - Native Messaging to communicate with the local host.
 
-Users must understand that installing and enabling the extension allows Open Browser Use to inspect and operate real Chrome tabs in their active profile. The native messaging host manifest must keep `allowed_origins` restricted to the expected Open Browser Use extension ID.
+Users must understand that installing and enabling an extension allows Open Browser Use to inspect and operate real tabs in its active profile. The Chrome native messaging host manifest must keep `allowed_origins` restricted to the expected Open Browser Use extension ID.
+
+The Zen manifest omits unsupported `debugger` and `tabGroups` permissions. It
+still has broad tab, history, download, scripting, storage, and Native Messaging
+access. Its native manifest must keep `allowed_extensions` restricted to the
+stable Open Browser Use Gecko id.
 
 ## Clipboard, Downloads, And Files
 

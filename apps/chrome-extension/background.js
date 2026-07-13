@@ -9,6 +9,8 @@ const MAX_USER_TABS = 1000;
 const DEFAULT_SESSION_GROUP_TITLE = "Task - OBU";
 const DELIVERABLE_GROUP_TITLE = "✅ Open Browser Use";
 const LEGACY_SESSION_GROUP_TITLE_PATTERN = /^Open Browser Use [0-9a-f]{8}$/i;
+const HAS_TAB_GROUPS = Boolean(chrome.tabGroups && chrome.tabs.group);
+const HAS_CHROME_DEBUGGER = Boolean(chrome.debugger);
 
 class JsonRpcPeer {
   constructor(transport, handlers) {
@@ -166,7 +168,7 @@ class SessionStore {
       if (migrated) {
         await this.save();
       }
-      if (typeof this.state.deliverableGroupId === "number") {
+      if (HAS_TAB_GROUPS && typeof this.state.deliverableGroupId === "number") {
         await chrome.tabGroups
           .update(this.state.deliverableGroupId, { title: DELIVERABLE_GROUP_TITLE })
           .catch(() => {});
@@ -227,7 +229,7 @@ class BrowserBackend {
     this.fileChoosersById = new Map();
     this.fileChooserWaitersByTabId = new Map();
     this.nextCursorMoveSequence = 1;
-    chrome.debugger.onDetach.addListener((source) => {
+    chrome.debugger?.onDetach?.addListener((source) => {
       if (typeof source.tabId === "number") {
         this.attachedTabs.delete(source.tabId);
       }
@@ -245,12 +247,13 @@ class BrowserBackend {
       await chrome.storage.local.set({ extensionInstanceId });
     }
     return {
-      name: "Open Browser Use Chrome",
+      name: HAS_CHROME_DEBUGGER ? "Open Browser Use Chrome" : "Open Browser Use Firefox",
       version: chrome.runtime.getManifest().version,
       type: "extension",
       metadata: {
         extensionId: chrome.runtime.id,
         extensionInstanceId,
+        extensionOrigin: chrome.runtime.getURL(""),
         nativeHostName: NATIVE_HOST_NAME
       }
     };
@@ -314,10 +317,10 @@ class BrowserBackend {
     if (!hasTabId(tab)) {
       throw new Error(`Chrome tab ${tabId} has no id`);
     }
-    if (tab.url?.startsWith("chrome://")) {
-      throw new Error(`Chrome internal tab ${tabId} cannot be claimed`);
+    if (isInternalBrowserURL(tab.url)) {
+      throw new Error(`Browser internal tab ${tabId} cannot be claimed`);
     }
-    if (typeof tab.groupId === "number" && tab.groupId !== -1) {
+    if (HAS_TAB_GROUPS && typeof tab.groupId === "number" && tab.groupId !== -1) {
       const owner = await this.store.findSessionByGroup(tab.groupId);
       if (owner && owner.sessionId !== session.sessionId) {
         throw new Error(`Tab ${tabId} is already part of browser session ${owner.sessionId}`);
@@ -419,7 +422,7 @@ class BrowserBackend {
     const sessionState = await this.store.getSession(session.sessionId);
     sessionState.title = name;
     await this.store.save();
-    if (typeof sessionState.chromeGroupId === "number") {
+    if (HAS_TAB_GROUPS && typeof sessionState.chromeGroupId === "number") {
       await chrome.tabGroups.update(sessionState.chromeGroupId, { title: name }).catch(() => {});
     }
   }
@@ -428,11 +431,13 @@ class BrowserBackend {
     await this.requireSessionTab(params, "attach");
     const tabId = requireTabId(params, "attach");
     if (!this.attachedTabs.has(tabId)) {
-      try {
-        await chrome.debugger.attach({ tabId }, "1.3");
-      } catch (error) {
-        if (!String(error?.message ?? error).includes("Another debugger")) {
-          throw error;
+      if (HAS_CHROME_DEBUGGER) {
+        try {
+          await chrome.debugger.attach({ tabId }, "1.3");
+        } catch (error) {
+          if (!String(error?.message ?? error).includes("Another debugger")) {
+            throw error;
+          }
         }
       }
       this.attachedTabs.add(tabId);
@@ -460,6 +465,17 @@ class BrowserBackend {
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
     return await withTimeout(timeoutMs, async () => {
+      if (!HAS_CHROME_DEBUGGER) {
+        if (typeof globalThis.openBrowserUseFirefoxExecuteCommand !== "function") {
+          throw new Error("This browser does not provide the Chrome debugger API");
+        }
+        return await globalThis.openBrowserUseFirefoxExecuteCommand(
+          chrome,
+          target,
+          params.method,
+          params.commandParams ?? {}
+        );
+      }
       if (params.method === "Target.getTargets") {
         return { targetInfos: await chrome.debugger.getTargets() };
       }
@@ -512,6 +528,9 @@ class BrowserBackend {
   }
 
   async waitForFileChooser(params) {
+    if (!HAS_CHROME_DEBUGGER) {
+      throw new Error("File chooser interception is not supported by Firefox-based browsers");
+    }
     await this.requireSessionTab(params, "waitForFileChooser");
     const tabId = requireTabId(params, "waitForFileChooser");
     if (!this.attachedTabs.has(tabId)) {
@@ -536,6 +555,9 @@ class BrowserBackend {
   }
 
   async setFileChooserFiles(params) {
+    if (!HAS_CHROME_DEBUGGER) {
+      throw new Error("Setting local file chooser paths is not supported by Firefox-based browsers");
+    }
     await this.requireSession(params);
     if (typeof params.fileChooserId !== "string" || params.fileChooserId === "") {
       throw new Error("setFileChooserFiles requires fileChooserId");
@@ -898,6 +920,18 @@ class BrowserBackend {
   }
 
   async evaluateJavascript(tabId, expression, awaitPromise) {
+    if (!HAS_CHROME_DEBUGGER) {
+      const response = await globalThis.openBrowserUseFirefoxExecuteCommand(
+        chrome,
+        { tabId },
+        "Runtime.evaluate",
+        { expression, returnByValue: true, awaitPromise }
+      );
+      if (response.exceptionDetails) {
+        throw new Error(response.exceptionDetails.text ?? "JavaScript evaluation failed");
+      }
+      return response.result?.value;
+    }
     const result = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
       expression,
       returnByValue: true,
@@ -911,6 +945,11 @@ class BrowserBackend {
 
   async ensureSessionGroup(sessionId, tabId, origin) {
     const session = await this.store.getSession(sessionId);
+    if (!HAS_TAB_GROUPS) {
+      session.tabOrigins[String(tabId)] = origin;
+      await this.store.save();
+      return;
+    }
     let groupId = session.chromeGroupId;
     if (typeof groupId === "number") {
       try {
@@ -943,12 +982,18 @@ class BrowserBackend {
 
   async getSessionTabs(sessionId) {
     const session = await this.store.getSession(sessionId);
+    if (!HAS_TAB_GROUPS) {
+      const tabIds = new Set(Object.keys(session.tabOrigins).map(Number));
+      return (await chrome.tabs.query({})).filter(
+        (tab) => hasTabId(tab) && tabIds.has(tab.id) && !isInternalBrowserURL(tab.url)
+      );
+    }
     if (typeof session.chromeGroupId !== "number") {
       return [];
     }
     try {
       return (await chrome.tabs.query({ groupId: session.chromeGroupId })).filter(
-        (tab) => hasTabId(tab) && !tab.url?.startsWith("chrome://")
+        (tab) => hasTabId(tab) && !isInternalBrowserURL(tab.url)
       );
     } catch {
       await this.store.removeSession(sessionId);
@@ -996,6 +1041,10 @@ class BrowserBackend {
 
   async moveToDeliverables(tabIds) {
     if (!Array.isArray(tabIds) || tabIds.length === 0) {
+      return;
+    }
+
+    if (!HAS_TAB_GROUPS) {
       return;
     }
 
@@ -1077,7 +1126,9 @@ class BrowserBackend {
 
   async detachTab(tabId) {
     try {
-      await chrome.debugger.detach({ tabId });
+      if (HAS_CHROME_DEBUGGER) {
+        await chrome.debugger.detach({ tabId });
+      }
     } finally {
       this.attachedTabs.delete(tabId);
       for (const [fileChooserId, chooser] of this.fileChoosersById) {
@@ -1125,6 +1176,13 @@ class BrowserBackend {
 
 function hasTabId(tab) {
   return typeof tab?.id === "number";
+}
+
+function isInternalBrowserURL(url) {
+  return (
+    typeof url === "string" &&
+    (url.startsWith("chrome://") || (url.startsWith("about:") && url !== "about:blank"))
+  );
 }
 
 function toBrowserTab(tab) {
@@ -1186,6 +1244,9 @@ async function chooseWindowId() {
 }
 
 async function readGroupTitles(tabs) {
+  if (!HAS_TAB_GROUPS) {
+    return new Map();
+  }
   const ids = new Set(
     tabs
       .map((tab) => tab.groupId)
@@ -1291,7 +1352,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
-chrome.debugger.onEvent.addListener((source, method, params) => {
+chrome.debugger?.onEvent?.addListener((source, method, params) => {
   backend.handleCdpEvent(source, method, params);
   safeSendNotification(peer, "onCDPEvent", { source, method, params });
 });

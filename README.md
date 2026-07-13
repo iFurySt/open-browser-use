@@ -13,7 +13,7 @@
 > [!TIP]
 > Interested in Computer Use? Check out [open-computer-use](https://github.com/iFurySt/open-codex-computer-use).
 
-`open-browser-use` is a browser automation layer that stays neutral across
+`open-browser-use` is a browser automation layer for Chrome and Zen Browser that stays neutral across
 agent runtimes. It is also an open-source alternative to the Chrome Browser Use
 capability recently shipped in Codex.app. For the story behind it, see the
 [Browser Use Deep Dive](https://www.ifuryst.com/en/blog/2026/open-browser-use/).
@@ -56,6 +56,25 @@ open-browser-use setup
 If the Chrome Web Store item is temporarily unavailable, use
 `open-browser-use setup beta` to prepare a keyed release ZIP for manual
 installation from `chrome://extensions/`.
+
+### Set Up Zen Browser
+
+Download `open-browser-use-zen-extension-<version>.xpi` from the matching
+[GitHub Release](https://github.com/iFurySt/open-browser-use/releases). In Zen,
+open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**,
+and select the XPI. Then register the Firefox native messaging host:
+
+```bash
+open-browser-use install-manifest --browser zen
+open-browser-use profiles --connected
+open-browser-use info --browser zen
+```
+
+Zen is Firefox-based, so it does not expose Chrome's extension debugger API.
+The Zen route supports tabs, history, navigation, page information, JavaScript
+evaluation, downloads, clipboard helpers, cursor movement, and session cleanup.
+Arbitrary Chrome-only CDP methods and local file chooser injection are not
+available.
 
 ### Use It
 

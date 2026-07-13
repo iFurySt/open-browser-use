@@ -20,11 +20,13 @@ fi
 "${repo_root}/scripts/check-action-pinning.sh"
 node "${repo_root}/scripts/generate-chrome-extension-icons.mjs"
 "${repo_root}/scripts/package-chrome-extension.sh" >/dev/null
+"${repo_root}/scripts/package-zen-extension.sh" >/dev/null
 "${repo_root}/scripts/package-skill.sh" >/dev/null
 (
   cd "${repo_root}"
   go test ./...
   node --test apps/chrome-extension/*.test.mjs
+  node --test apps/zen-extension/*.test.mjs
   node --test scripts/*.test.mjs
   pnpm -r --if-present test
 )
