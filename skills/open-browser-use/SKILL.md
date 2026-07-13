@@ -1,13 +1,13 @@
 ---
 name: open-browser-use
-description: Platform-neutral guidance for using Open Browser Use, the open-source Chrome automation stack for AI agents. Use when an agent needs to install, verify, troubleshoot, or operate Open Browser Use through its browser extension, native CLI, JavaScript SDK, Python SDK, Go SDK, or Browser Use style JSON-RPC methods; use for tasks involving real Chrome tabs, user tab claiming, CDP commands, downloads, file choosers, clipboard helpers, or session cleanup.
+description: Platform-neutral guidance for using Open Browser Use, the open-source Chrome and Zen Browser automation stack for AI agents. Use when an agent needs to install, verify, troubleshoot, or operate Open Browser Use through its browser extension, native CLI, JavaScript SDK, Python SDK, Go SDK, or Browser Use style JSON-RPC methods; use for tasks involving real browser tabs, user tab claiming, CDP-compatible commands, downloads, file choosers, clipboard helpers, or session cleanup.
 ---
 
 # Open Browser Use
 
 ## Overview
 
-Open Browser Use connects an MV3 Chrome extension, a local native messaging host, a CLI, SDKs, and an optional stdio MCP server so agents can automate a real Chrome profile. It is not Codex.app-specific; adapt the commands, MCP config, and SDK examples to the agent runtime you are operating in.
+Open Browser Use connects an MV3 Chrome or Zen/Firefox extension, a local native messaging host, a CLI, SDKs, and an optional stdio MCP server so agents can automate a real browser profile. It is not Codex.app-specific; adapt the commands, MCP config, and SDK examples to the agent runtime you are operating in. Zen supports the core compatibility surface documented in `references/installation.md`, not arbitrary Chrome CDP methods.
 
 ## Core Workflow
 
@@ -41,7 +41,7 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 ## Browser and profile handling
 
 Some users run several supported browsers (for example Google Chrome, Google
-Chrome Beta, or BitBrowser) and may also have multiple profiles inside them. If
+Chrome Beta, Zen Browser, or BitBrowser) and may also have multiple profiles inside them. If
 more than one browser/profile target has the Open Browser Use extension
 installed, the agent must decide which target this task should operate on rather
 than silently picking whatever window happens to be active.
@@ -57,7 +57,7 @@ than silently picking whatever window happens to be active.
    menu), `VERSION`, and `CONNECTED` (whether that target's host is currently
    reachable). JSON output is available via `--json` and includes a stable
    `target` such as `chrome:Default`, `chrome-beta:Default`, or
-   `bitbrowser:<instance>:Default`.
+   `zen:<profile-directory>`, or `bitbrowser:<instance>:Default`.
 
 2. If exactly one target is installed and connected, proceed without asking.
    If it is installed but not connected, ask the user to open Chrome on that
@@ -74,7 +74,7 @@ than silently picking whatever window happens to be active.
 
 5. After the user has chosen, pass `--browser <selector>` and, when needed,
    `--profile <selector>` to every CLI / MCP command for the rest of the task.
-   Browser selectors accept ids such as `chrome`, `chrome-beta`, `bitbrowser`,
+   Browser selectors accept ids such as `chrome`, `chrome-beta`, `zen`, `bitbrowser`,
    browser display names, or a BitBrowser instance id. Profile selectors accept
    either the directory name (`Default`, `Profile 1`) or the display name
    (`Eva`, `cookiy.com`), case-insensitive. Do not switch browser/profile

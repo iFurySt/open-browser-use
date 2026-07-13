@@ -38,6 +38,9 @@ func TestNativeMessagingLaunchArg(t *testing.T) {
 	if isNativeMessagingLaunch([]string{"host"}) {
 		t.Fatal("expected CLI subcommand not to be treated as native messaging launch")
 	}
+	if !isNativeMessagingLaunch([]string{filepath.Join(t.TempDir(), host.NativeHostName+".json"), defaultFirefoxExtensionID}) {
+		t.Fatal("expected Firefox native manifest argument to launch host mode")
+	}
 }
 
 func TestCobraVersionCommand(t *testing.T) {
@@ -213,6 +216,45 @@ func TestCobraInstallManifestSupportsChromeBeta(t *testing.T) {
 	}
 	if _, err := os.Stat(want); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInstallNativeManifestSupportsZen(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("stable native host test requires an executable link target")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	targetPath := filepath.Join(t.TempDir(), "open-browser-use")
+	if err := os.WriteFile(targetPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath, err := installNativeManifestForBrowser("", targetPath, "", "zen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath := filepath.Join(home, ".mozilla/native-messaging-hosts", host.NativeHostName+".json")
+	if runtime.GOOS == "darwin" {
+		wantPath = filepath.Join(home, "Library/Application Support/Mozilla/NativeMessagingHosts", host.NativeHostName+".json")
+	}
+	if manifestPath != wantPath {
+		t.Fatalf("expected Zen manifest path %q, got %q", wantPath, manifestPath)
+	}
+	payload, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest map[string]any
+	if err := json.Unmarshal(payload, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	extensions, ok := manifest["allowed_extensions"].([]any)
+	if !ok || len(extensions) != 1 || extensions[0] != defaultFirefoxExtensionID {
+		t.Fatalf("expected default Firefox extension id, got %#v", manifest["allowed_extensions"])
+	}
+	if _, exists := manifest["allowed_origins"]; exists {
+		t.Fatalf("did not expect Chromium allowed_origins in Zen manifest: %#v", manifest)
 	}
 }
 
@@ -441,6 +483,33 @@ func bitBrowserRootForTest(home, instance string) string {
 	return filepath.Join(home, "Library/Application Support/BitBrowser/BrowserCache", instance)
 }
 
+func zenRootForTest(home string) string {
+	if runtime.GOOS == "linux" {
+		return filepath.Join(home, ".config/zen")
+	}
+	if runtime.GOOS == "windows" {
+		return filepath.Join(home, "AppData/Roaming/zen")
+	}
+	return filepath.Join(home, "Library/Application Support/zen")
+}
+
+func writeZenExtensionRegistry(t *testing.T, home, profileDir, profileName, extensionVersion string) {
+	t.Helper()
+	root := zenRootForTest(home)
+	profilePath := filepath.Join(root, "Profiles", profileDir)
+	if err := os.MkdirAll(profilePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profilesINI := fmt.Sprintf("[Profile0]\nName=%s\nIsRelative=1\nPath=Profiles/%s\n", profileName, profileDir)
+	if err := os.WriteFile(filepath.Join(root, "profiles.ini"), []byte(profilesINI), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := fmt.Sprintf(`{"addons":[{"id":%q,"version":%q,"path":"extensions/%s.xpi","active":true}]}`, defaultFirefoxExtensionID, extensionVersion, defaultFirefoxExtensionID)
+	if err := os.WriteFile(filepath.Join(profilePath, "extensions.json"), []byte(registry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeLocalStateAtRoot(t *testing.T, root string, payload string) {
 	t.Helper()
 	if err := os.MkdirAll(root, 0o700); err != nil {
@@ -661,6 +730,69 @@ func TestListInstalledChromeProfilesIncludesSupportedBrowsers(t *testing.T) {
 	}
 	if got["bitbrowser:abc123:Default"].BrowserInstance != "abc123" {
 		t.Fatalf("expected BitBrowser instance, got %+v", got["bitbrowser:abc123:Default"])
+	}
+}
+
+func TestListInstalledZenProfiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeZenExtensionRegistry(t, home, "abc123.default-release", "Personal", "0.1.40")
+
+	profiles, err := listInstalledChromeProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var zen *installedChromeProfile
+	for i := range profiles {
+		if profiles[i].Browser == "zen" {
+			zen = &profiles[i]
+			break
+		}
+	}
+	if zen == nil {
+		t.Fatalf("expected Zen profile in %+v", profiles)
+	}
+	if zen.BrowserName != "Zen Browser" || zen.Directory != "abc123.default-release" || zen.DisplayName != "Personal" {
+		t.Fatalf("unexpected Zen profile: %+v", *zen)
+	}
+	if zen.ExtensionID != defaultFirefoxExtensionID || zen.Target != "zen:abc123.default-release" {
+		t.Fatalf("unexpected Zen extension routing metadata: %+v", *zen)
+	}
+}
+
+func TestFirefoxProfilePathsSupportsDirectZenLayout(t *testing.T) {
+	root := t.TempDir()
+	profileDir := filepath.Join(root, "d7sqxvvc.Default (release)")
+	if err := os.MkdirAll(profileDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profilesINI := "[Profile0]\nName=Default (release)\nIsRelative=1\nPath=d7sqxvvc.Default (release)\n"
+	if err := os.WriteFile(filepath.Join(root, "profiles.ini"), []byte(profilesINI), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := firefoxProfilePaths(root)
+	if len(paths) != 1 || paths[0] != profileDir {
+		t.Fatalf("expected direct Zen profile path %q, got %+v", profileDir, paths)
+	}
+}
+
+func TestResolveZenProfileFromExtensionOrigin(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	profileDir := "abc123.default-release"
+	writeZenExtensionRegistry(t, home, profileDir, "Personal", "0.1.40")
+	prefs := `user_pref("extensions.webextensions.uuids", "{\"open-browser-use@ifuryst.com\":\"2b27a953-2f07-4ff7-a77d-8616c81a3419\"}");`
+	if err := os.WriteFile(filepath.Join(zenRootForTest(home), "Profiles", profileDir, "prefs.js"), []byte(prefs), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	browserID, browserName, _, dir, name, ok := resolveProfileForExtension(
+		defaultFirefoxExtensionID,
+		"instance-not-yet-flushed-to-disk",
+		"moz-extension://2b27a953-2f07-4ff7-a77d-8616c81a3419/",
+	)
+	if !ok || browserID != "zen" || browserName != "Zen Browser" || dir != profileDir || name != "Personal" {
+		t.Fatalf("unexpected Zen origin resolution: browser=%q name=%q dir=%q profile=%q ok=%v", browserID, browserName, dir, name, ok)
 	}
 }
 

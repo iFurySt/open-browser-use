@@ -19,6 +19,12 @@ if [[ "${chrome_extension_artifact}" != "open-browser-use-chrome-extension-${ver
 fi
 chrome_extension_crx="$(find "${repo_root}/dist/chrome-extension" -maxdepth 1 -type f -name '*.crx' -print -quit)"
 chrome_extension_crx_artifact="$(basename "${chrome_extension_crx}")"
+zen_extension_xpi="$("${repo_root}/scripts/package-zen-extension.sh")"
+zen_extension_artifact="$(basename "${zen_extension_xpi}")"
+if [[ "${zen_extension_artifact}" != "open-browser-use-zen-extension-${version}.xpi" ]]; then
+  echo "Unexpected Zen extension artifact: ${zen_extension_artifact}" >&2
+  exit 1
+fi
 skill_zip="$("${repo_root}/scripts/package-skill.sh" | sed -n '1p')"
 skill_artifact="$(basename "${skill_zip}")"
 skill_bundle="$(find "${repo_root}/dist/skills" -maxdepth 1 -type f -name '*.skill' -print -quit)"
@@ -43,6 +49,7 @@ cat > "${dist_dir}/release-manifest.json" <<EOF
     "cli_windows_arm64": "cli/open-browser-use-cli-${version}-windows-arm64.zip",
     "chrome_extension": "chrome-extension/${chrome_extension_artifact}",
     "chrome_extension_internal_crx": "chrome-extension/${chrome_extension_crx_artifact}",
+    "zen_extension": "zen-extension/${zen_extension_artifact}",
     "open_browser_use_skill_zip": "skills/${skill_artifact}",
     "open_browser_use_skill": "skills/${skill_bundle_artifact}"
   }
@@ -57,5 +64,6 @@ echo "${dist_dir}/repo-metadata.tgz"
 find "${cli_dir}" -maxdepth 1 -type f -name '*.tar.gz' | sort
 find "${cli_dir}" -maxdepth 1 -type f -name '*.zip' | sort
 echo "${chrome_extension_zip}"
+echo "${zen_extension_xpi}"
 echo "${skill_zip}"
 echo "${skill_bundle}"

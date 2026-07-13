@@ -17,11 +17,11 @@ Do not reuse the CLI fallback session for agent browser work.
 
 If these fail:
 
-1. Confirm Chrome is installed.
-2. Confirm Chrome is running.
+1. Confirm the selected Chrome or Zen browser is installed.
+2. Confirm the selected browser is running.
 3. Confirm the Open Browser Use extension is installed and enabled.
-4. Confirm the native host manifest is installed with `open-browser-use install-manifest` or rerun `open-browser-use setup`.
-5. Ask the user to approve any Chrome extension prompt.
+4. Confirm the native host manifest is installed with `open-browser-use install-manifest` (use `--browser zen` for Zen) or rerun the matching setup flow.
+5. Ask the user to approve any browser extension prompt.
 
 Do not silently install, enable, or repair browser integration when the action needs user approval.
 
@@ -41,7 +41,7 @@ open-browser-use ping --socket-dir /tmp/open-browser-use
 open-browser-use ping --timeout 20s
 ```
 
-If no active host exists, opening Chrome with the extension enabled can allow Chrome to start the native host.
+If no active host exists, opening the selected browser with the extension enabled can allow it to start the native host.
 
 ## Extension Or Native Host Mismatch
 

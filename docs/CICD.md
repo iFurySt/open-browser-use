@@ -7,7 +7,7 @@
 - `ci.yml`：仓库级检查，覆盖 docs、repo hygiene、action pinning、extension
   打包、脚本语法、Go 测试、JS/TypeScript package 测试和 Python SDK smoke。
 - `release.yml`：tag `v*` 推送或手动触发的 release 流水线，用来打包仓库级制品、
-  CLI 预编译 tarball、Chrome extension zip、内部 CRX evidence、Open Browser Use skill 包、
+  CLI 预编译 tarball、Chrome extension zip、内部 CRX evidence、Zen extension XPI、Open Browser Use skill 包、
   生成 provenance，并创建 GitHub Release；Release 页面暴露 extension zip/CRX
   和 skill 下载包，普通安装入口使用 zip/unpacked，其他 manifest、SBOM 和 repo
   metadata 留在 workflow artifact 里。手动触发时按输入参数可把
@@ -71,6 +71,7 @@
 - `open-browser-use-cli-<version>-linux-arm64.tar.gz`
 - `open-browser-use-chrome-extension-<version>.zip`
 - `open-browser-use-chrome-extension-<version>.crx`
+- `open-browser-use-zen-extension-<version>.xpi`
 - `open-browser-use-skill.zip`
 - `open-browser-use.skill`
 
@@ -86,8 +87,9 @@ workflow 还会在 `release-evidence` artifact 中保留内部追溯材料：
 - `cli/open-browser-use-cli-<version>-*.tar.gz`
 - `chrome-extension/package-manifest.json`
 - `chrome-extension/crx-manifest.json`
+- `zen-extension/package-manifest.json`
 - `skills/package-manifest.json`
 - `sbom.spdx.json`
-- 对 extension zip/CRX 和 skill 包生成的 GitHub artifact attestation
+- 对 extension zip/CRX、Zen XPI 和 skill 包生成的 GitHub artifact attestation
 
 也就是说，即使项目还没进入真实部署阶段，这个模板也已经把“可追溯的制品封装”这一步准备好了。

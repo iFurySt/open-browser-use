@@ -101,6 +101,10 @@ function detectPlatform() {
     globalThis.navigator?.userAgent ??
     "";
   const platform = String(rawPlatform).toLowerCase();
+  const isFirefox = String(globalThis.navigator?.userAgent ?? "").toLowerCase().includes("firefox");
+  const npmCommand = isFirefox
+    ? "npm install -g open-browser-use && open-browser-use install-manifest --browser zen"
+    : "npm install -g open-browser-use && open-browser-use setup";
 
   if (platform.includes("mac")) {
     return {
@@ -108,11 +112,13 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         },
         {
           label: "Homebrew",
-          command: "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use setup"
+          command: isFirefox
+            ? "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use install-manifest --browser zen"
+            : "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use setup"
         }
       ]
     };
@@ -124,7 +130,7 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         }
       ]
     };
@@ -136,7 +142,7 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         }
       ]
     };
@@ -147,7 +153,7 @@ function detectPlatform() {
     commands: [
       {
         label: "npm",
-        command: "npm install -g open-browser-use && open-browser-use setup"
+        command: npmCommand
       }
     ]
   };
