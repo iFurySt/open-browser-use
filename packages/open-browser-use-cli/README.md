@@ -122,7 +122,12 @@ finalize-tabs []
 '
 ```
 
-Example claiming an existing user tab:
+Use `claim-tab` only for tabs that are already in an Open Browser Use-owned tab
+group, such as `✅ Open Browser Use` or a task group ending with ` - OBU`. Do
+not claim ungrouped user tabs or tabs in non-OBU groups; open a new managed tab
+instead.
+
+Example claiming an existing OBU-owned tab:
 
 ```sh
 open-browser-use run -c '
