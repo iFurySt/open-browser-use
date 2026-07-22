@@ -154,7 +154,7 @@ func newSetupCommand() *cobra.Command {
 			status := detectBrowserExtensionForBrowser(host.DefaultSocketDir, 700*time.Millisecond, browser)
 			shouldOpenStore := shouldOpenStoreSetup(status, noOpen)
 			if shouldOpenStore {
-				if err := openChromeWebStorePage(); err != nil {
+				if err := openChromeWebStorePage(browser); err != nil {
 					result.StoreOpenError = err.Error()
 				} else {
 					result.OpenedStore = true
@@ -166,7 +166,7 @@ func newSetupCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&externalExtensionOutput, "external-extension-output", "", "Chrome external extension JSON output path")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register with Chrome Web Store setup (chrome or chrome-beta)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register with Chrome Web Store setup (chrome, chrome-beta, or dia)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "register Chrome integration without opening the Chrome Web Store page")
 	cmd.AddCommand(newSetupBetaCommand())
 	return cmd
@@ -224,7 +224,7 @@ func newSetupBetaCommand() *cobra.Command {
 			status.UpgradeCommand = status.InstallCommand
 			shouldOpen := shouldOpenManualSetup(status, noOpen)
 			if shouldOpen {
-				if err := openChromeExtensionsPage(); err != nil {
+				if err := openChromeExtensionsPage(browser); err != nil {
 					return err
 				}
 				if err := revealFile(installZIPPath); err != nil {
@@ -246,7 +246,7 @@ func newSetupBetaCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&zipPath, "zip", "", "existing extension zip path; defaults to the latest GitHub Release zip")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, dia, bitbrowser, or browser instance id)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "download and unpack the extension without opening Chrome")
 	return cmd
 }
@@ -292,7 +292,7 @@ func newInstallManifestCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&outputPath, "output", "", "native host manifest output path")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, dia, bitbrowser, or browser instance id)")
 	return cmd
 }
 
@@ -625,7 +625,7 @@ func detectInstalledChromeExtensionByID(extensionID string) (detectedExtension, 
 	}
 	var best detectedExtension
 	for _, root := range roots {
-		profiles, err := chromeProfileDirs(root.Root)
+		profiles, err := chromeProfileDirs(root.UserDataDir)
 		if err != nil {
 			continue
 		}
@@ -748,14 +748,14 @@ func listInstalledChromeProfiles() ([]installedChromeProfile, error) {
 
 	var profiles []installedChromeProfile
 	for _, root := range roots {
-		profileDirs, err := chromeProfileDirs(root.Root)
+		profileDirs, err := chromeProfileDirs(root.UserDataDir)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return nil, err
 		}
-		displayNames := chromeProfileDisplayNames(root.Root)
+		displayNames := chromeProfileDisplayNames(root.UserDataDir)
 		for _, profileDir := range profileDirs {
 			var best detectedExtension
 			for _, extensionID := range candidates {
@@ -834,11 +834,11 @@ func resolveProfileForInstanceID(extensionID string, instanceID string) (browser
 	}
 	needle := []byte(instanceID)
 	for _, root := range roots {
-		profiles, err := chromeProfileDirs(root.Root)
+		profiles, err := chromeProfileDirs(root.UserDataDir)
 		if err != nil {
 			continue
 		}
-		names := chromeProfileDisplayNames(root.Root)
+		names := chromeProfileDisplayNames(root.UserDataDir)
 		for _, profileDir := range profiles {
 			storageDir := filepath.Join(profileDir, "Local Extension Settings", extensionID)
 			entries, err := os.ReadDir(storageDir)
@@ -1515,6 +1515,7 @@ type browserProfileRoot struct {
 	BrowserName     string
 	BrowserInstance string
 	Root            string
+	UserDataDir     string
 }
 
 func supportedBrowserProfileRoots() ([]browserProfileRoot, error) {
@@ -1529,11 +1530,19 @@ func supportedBrowserProfileRoots() ([]browserProfileRoot, error) {
 				BrowserID:   "chrome",
 				BrowserName: "Google Chrome",
 				Root:        filepath.Join(home, "Library/Application Support/Google/Chrome"),
+				UserDataDir: filepath.Join(home, "Library/Application Support/Google/Chrome"),
 			},
 			{
 				BrowserID:   "chrome-beta",
 				BrowserName: "Google Chrome Beta",
 				Root:        filepath.Join(home, "Library/Application Support/Google/Chrome Beta"),
+				UserDataDir: filepath.Join(home, "Library/Application Support/Google/Chrome Beta"),
+			},
+			{
+				BrowserID:   "dia",
+				BrowserName: "Dia",
+				Root:        filepath.Join(home, "Library/Application Support/Dia"),
+				UserDataDir: filepath.Join(home, "Library/Application Support/Dia/User Data"),
 			},
 		}
 		bitBrowserRoots, err := bitBrowserProfileRoots(home)
@@ -1547,6 +1556,7 @@ func supportedBrowserProfileRoots() ([]browserProfileRoot, error) {
 			BrowserID:   "chrome",
 			BrowserName: "Google Chrome",
 			Root:        filepath.Join(home, ".config/google-chrome"),
+			UserDataDir: filepath.Join(home, ".config/google-chrome"),
 		}}, nil
 	case "windows":
 		localAppData := os.Getenv("LOCALAPPDATA")
@@ -1558,11 +1568,13 @@ func supportedBrowserProfileRoots() ([]browserProfileRoot, error) {
 				BrowserID:   "chrome",
 				BrowserName: "Google Chrome",
 				Root:        filepath.Join(localAppData, "Google", "Chrome", "User Data"),
+				UserDataDir: filepath.Join(localAppData, "Google", "Chrome", "User Data"),
 			},
 			{
 				BrowserID:   "chrome-beta",
 				BrowserName: "Google Chrome Beta",
 				Root:        filepath.Join(localAppData, "Google", "Chrome Beta", "User Data"),
+				UserDataDir: filepath.Join(localAppData, "Google", "Chrome Beta", "User Data"),
 			},
 		}, nil
 	default:
@@ -1593,6 +1605,7 @@ func bitBrowserProfileRoots(home string) ([]browserProfileRoot, error) {
 			BrowserName:     "BitBrowser",
 			BrowserInstance: entry.Name(),
 			Root:            root,
+			UserDataDir:     root,
 		})
 	}
 	sort.Slice(roots, func(i, j int) bool {
@@ -3347,11 +3360,15 @@ func revealFile(path string) error {
 	return cmd.Process.Release()
 }
 
-func openChromeExtensionsPage() error {
+func openChromeExtensionsPage(browserName string) error {
+	browserName = strings.TrimSpace(browserName)
+	if browserName == "" {
+		browserName = "Google Chrome"
+	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", "-a", "Google Chrome", "chrome://extensions/")
+		cmd = exec.Command("open", "-a", browserName, "chrome://extensions/")
 	case "linux":
 		cmd = exec.Command("xdg-open", "chrome://extensions/")
 	case "windows":
@@ -3365,11 +3382,15 @@ func openChromeExtensionsPage() error {
 	return cmd.Process.Release()
 }
 
-func openChromeWebStorePage() error {
+func openChromeWebStorePage(browserName string) error {
+	browserName = strings.TrimSpace(browserName)
+	if browserName == "" {
+		browserName = "Google Chrome"
+	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", "-a", "Google Chrome", chromeWebStoreExtensionURL)
+		cmd = exec.Command("open", "-a", browserName, chromeWebStoreExtensionURL)
 	case "linux":
 		cmd = exec.Command("xdg-open", chromeWebStoreExtensionURL)
 	case "windows":
