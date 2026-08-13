@@ -1,5 +1,11 @@
 # 功能发布记录
 
+## 2026-08
+
+| 日期 | 功能域 | 用户价值 | 变更摘要 |
+| --- | --- | --- | --- |
+| 2026-08-13 | Agent Runtime Reliability | Ream、Cursor、Codex CLI 等 agent 可稳定关联 response、可靠交接 tab，并在 timeout 后查明结果；常见浏览动作不再要求 agent 拼 raw CDP。 | 准备 `0.1.42`：修复 CLI exact-id response correlation 和 relay orphan-response 隔离；handoff 保留 tab 但释放 ownership；新增 claim/finalize receipts、durable operation reconciliation、background CDP fence，以及 scroll/extract/wait/click/type/select/screenshot/close 等 MCP/action tools。 |
+
 ## 2026-07
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |

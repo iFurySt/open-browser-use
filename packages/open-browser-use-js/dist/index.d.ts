@@ -44,6 +44,10 @@ export declare class OpenBrowserUseClient {
     getUserTabs(): Promise<JsonValue>;
     getUserHistory(params?: BrowserUseRequestParams): Promise<JsonValue>;
     claimUserTab(tabId: number): Promise<JsonValue>;
+    claimStatus(tabId: number): Promise<JsonValue>;
+    closeTab(tabId: number): Promise<JsonValue>;
+    focusState(): Promise<JsonValue>;
+    reconcileOperation(operationId: string): Promise<JsonValue>;
     finalizeTabs(keep: JsonValue[]): Promise<JsonValue>;
     nameSession(name: string): Promise<JsonValue>;
     attach(tabId: number): Promise<JsonValue>;

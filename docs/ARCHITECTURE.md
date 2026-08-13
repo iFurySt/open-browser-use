@@ -161,6 +161,11 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `user_tabs`、`open_tab`、`navigate`、`page_info`、`cdp`、
   `run_action_plan`、`finalize_tabs` 和 unrestricted `call`，适合 Codex
   等支持本地 MCP server 的 agent runtime 直接接入。
+  Agent 常用动作同时有高阶工具：`active_tab`、`back`、`forward`、
+  `scroll`、`extract`、`wait_for`、`click_element`、`type_into`、
+  `select_option`、`screenshot`、`focus_state` 和 `close_tab`。这些工具
+  不激活 Chrome window，也不移动系统鼠标；raw CDP 的
+  `Page.bringToFront` 在 extension 边界被拒绝。
 - CLI 便捷子命令覆盖当前 SDK 核心能力：`ping`、`info`、`tabs`、
   `user-tabs`、`history`、`open-tab`、`navigate`、`claim-tab`、
   `finalize-tabs`、`name-session`、`cdp`、`move-mouse`、
@@ -188,6 +193,12 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `waitForFileChooser`、`setFileChooserFiles`、`waitForDownload`、
   `downloadPath`、`readClipboardText`、`writeClipboardText`、
   `readClipboard`、`writeClipboard`、`turnEnded`。
+- 每个 CLI/SDK request 带唯一 `operation_id`。extension 在
+  `chrome.storage.local` 中保留最近 128 个 operation 的
+  `running`/`completed`/`failed` 状态和有界结果；client timeout 必须报告
+  `outcome=unknown`，上层通过 `reconcileOperation` 查询，不能静默重放 mutation。
+  Native relay 对 request id 做 caller 级映射，并丢弃失去 owner 的迟到
+  `obu:*` response，只广播真正的 JSON-RPC notifications。
 - Session state persists the Chrome tab group id, tab origins, group title,
   deliverable group id, and logical active tab id in `chrome.storage.local` so
   MV3 service worker restarts can recover session tab listing semantics.
@@ -200,6 +211,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   仅在该窗口完全没有同名分组时才新建。
   `turnEnded` and `finalizeTabs` clear active session state when control ends
   so download notifications only fire while a browser session is active.
+  `finalizeTabs(handoff)` 会保留 tab 和视觉 task group，但删除 session
+  ownership record；新的 agent session 可以立即 claim。claim、finalize 和
+  turn-ended 都返回结构化 receipt，明确 tab disposition 与 ownership 状态。
 - MV3 extension event forwarding：`chrome.debugger.onEvent` 转发为
   `onCDPEvent`，`chrome.downloads` 创建/变更转发为 `onDownloadChange`，
   cursor content script 会回报 cursor arrival 以支持 `moveMouse`

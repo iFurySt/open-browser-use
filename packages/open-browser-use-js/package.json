@@ -1,6 +1,6 @@
 {
   "name": "open-browser-use-sdk",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "description": "JavaScript/TypeScript SDK for Open Browser Use.",
   "license": "MIT",
   "type": "module",

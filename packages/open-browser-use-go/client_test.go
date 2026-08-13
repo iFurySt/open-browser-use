@@ -36,6 +36,10 @@ func TestRequestRoundTrip(t *testing.T) {
 		if request["method"] != "getInfo" {
 			t.Fatalf("expected getInfo, got %#v", request["method"])
 		}
+		params, _ := request["params"].(map[string]any)
+		if operationID, _ := params["operation_id"].(string); operationID == "" {
+			t.Fatalf("expected request operation_id, got %#v", params)
+		}
 		writeResponse(t, conn, request["id"], map[string]any{"name": "Open Browser Use"})
 	})
 	defer closeServer()

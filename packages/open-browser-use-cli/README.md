@@ -104,9 +104,9 @@ open-browser-use run --file ./docs-scan.obu
 
 Supported actions:
 
-- Session/info: `ping`, `info`, `tabs`, `user-tabs`, `turn-ended`
-- Browser tabs: `open-tab`, `claim-tab`, `navigate`, `wait-load`, `page-info`
-- Browser methods: `history`, `cdp`, `call`
+- Session/info: `ping`, `info`, `tabs`, `user-tabs`, `active-tab`, `focus-state`, `turn-ended`
+- Browser tabs: `open-tab`, `claim-tab`, `claim-status`, `close-tab`, `navigate`, `back`, `forward`, `wait-load`, `page-info`
+- Browser methods: `history`, `scroll`, `extract`, `wait-for`, `click-element`, `type-into`, `select-option`, `screenshot`, `cdp`, `call`
 - Input/files: `move-mouse`, `wait-file-chooser`, `set-file-chooser-files`
 - Cleanup: `finalize-tabs`
 
@@ -149,10 +149,15 @@ args = ["mcp"]
 ```
 
 The MCP server exposes browser tools such as `user_tabs`, `open_tab`,
-`claim_tab`, `navigate`, `wait_load`, `page_info`, `cdp`, `history`,
-`run_action_plan`, `finalize_tabs`, and unrestricted `call`. It uses the same
+`claim_tab`, `claim_status`, `active_tab`, `navigate`, `back`, `forward`,
+`wait_load`, `page_info`, `scroll`, `extract`, `wait_for`, `click_element`,
+`type_into`, `select_option`, `screenshot`, `focus_state`, `close_tab`, `cdp`,
+`history`, `reconcile_operation`, `run_action_plan`, `finalize_tabs`, and unrestricted `call`. It uses the same
 socket discovery as the CLI; pass `--socket <path>` or `--socket-dir <dir>` in
 `args` only when the runtime needs an explicit socket.
+
+If a command times out and reports an operation id with `outcome=unknown`, do
+not replay it. Run `obu reconcile-operation --operation-id <id>` first.
 
 ## Low-Level JSON-RPC
 

@@ -1236,6 +1236,102 @@ func TestInvokeScansSocketDirWhenActiveRecordMissing(t *testing.T) {
 	}
 }
 
+func TestInvokeSkipsNotificationsAndMismatchedResponses(t *testing.T) {
+	socketDir, err := os.MkdirTemp("/tmp", "obu-correlation-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(socketDir)
+	socketPath := filepath.Join(socketDir, "browser.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			serverDone <- acceptErr
+			return
+		}
+		defer conn.Close()
+		var request map[string]any
+		if readErr := wire.ReadJSON(conn, &request); readErr != nil {
+			serverDone <- readErr
+			return
+		}
+		messages := []map[string]any{
+			{"jsonrpc": "2.0", "method": "heartbeat", "params": map[string]any{"at": "now"}},
+			{"jsonrpc": "2.0", "id": "stale-request", "result": map[string]any{"stale": true}},
+			{"jsonrpc": "2.0", "id": request["id"], "result": map[string]any{"version": version}},
+		}
+		for _, message := range messages {
+			if writeErr := wire.WriteJSON(conn, message); writeErr != nil {
+				serverDone <- writeErr
+				return
+			}
+		}
+		serverDone <- nil
+	}()
+
+	response, err := invoke(socketPath, socketDir, "getInfo", map[string]any{}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, _ := response["result"].(map[string]any)
+	if result["version"] != version {
+		t.Fatalf("expected correlated response, got %#v", response)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInvokeTimeoutReportsUnknownOperationOutcome(t *testing.T) {
+	socketDir, err := os.MkdirTemp("/tmp", "obu-timeout-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(socketDir)
+	socketPath := filepath.Join(socketDir, "browser.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	operationIDs := make(chan string, 1)
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		var request map[string]any
+		if wire.ReadJSON(conn, &request) != nil {
+			return
+		}
+		params, _ := request["params"].(map[string]any)
+		operationID, _ := params["operation_id"].(string)
+		operationIDs <- operationID
+		<-time.After(50 * time.Millisecond)
+	}()
+
+	_, err = invoke(socketPath, socketDir, "executeCdp", map[string]any{}, 10*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "outcome=unknown") || !strings.Contains(err.Error(), "operation_id=") {
+		t.Fatalf("expected unknown-outcome error with operation id, got %v", err)
+	}
+	operationID := <-operationIDs
+	if operationID == "" || !strings.Contains(err.Error(), operationID) {
+		t.Fatalf("error must expose request operation id %q: %v", operationID, err)
+	}
+	<-serverDone
+}
+
 func TestInvokeCleansStaleSocketFilesDuringScan(t *testing.T) {
 	socketDir, err := os.MkdirTemp("/tmp", "obu-socket-test-")
 	if err != nil {

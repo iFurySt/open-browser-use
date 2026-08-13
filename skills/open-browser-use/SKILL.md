@@ -37,6 +37,10 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 - Do not rely on the CLI fallback session `obu-cli` for agent tasks. Always pass a task-unique `--session-id` to CLI and MCP commands, or set `sessionId` / `session_id` / `SessionID` in SDK clients. The fallback exists for quick manual use and can reuse stale task groups across unrelated agent sessions.
 - Direct CLI subcommands and `open-browser-use run` can share the same browser session only when they use the same explicit `--session-id`. Finalize that same session before ending browser work.
 - Use `call --method <method> --params '<json>'` only when no safer convenience command or SDK wrapper exists.
+- Keep Chrome background-only. Use `focus_state` when a workflow needs evidence;
+  `Page.bringToFront` is intentionally blocked and OBU never moves the OS cursor.
+- If a timeout reports `operation_id=...` and `outcome=unknown`, do not retry the
+  action. Call `reconcile_operation` (or the SDK equivalent) first.
 
 ## Browser and profile handling
 
@@ -147,8 +151,11 @@ Use a fresh `--session-id` value per agent task or conversation. If the runtime
 has a stable conversation/session id, derive the MCP `--session-id` from it.
 
 The MCP server exposes tools including `user_tabs`, `open_tab`, `claim_tab`,
-`navigate`, `wait_load`, `page_info`, `cdp`, `history`, `run_action_plan`,
-`finalize_tabs`, and unrestricted `call`.
+`claim_status`, `active_tab`, `navigate`, `back`, `forward`, `wait_load`,
+`page_info`, `scroll`, `extract`, `wait_for`, `click_element`, `type_into`,
+`select_option`, `screenshot`, `focus_state`, `close_tab`, `cdp`, `history`,
+`reconcile_operation`, `run_action_plan`, `finalize_tabs`, and unrestricted
+`call`.
 
 Use `run_action_plan` when the runtime wants to execute the same compact action
 plan format available through `open-browser-use run` without shelling out for
@@ -164,7 +171,7 @@ each individual browser operation.
 - Keep a tab only when the user needs that live page after the turn. Omit research, source, search, intermediate, duplicate, blank, error, and login/navigation tabs after extracting what you need.
 - Keep a tab with `status: "deliverable"` when the tab itself is the user-facing output or requested open page, such as a created or edited document, dashboard, checkout/cart, submitted form result, or a page the user explicitly asked to inspect directly.
 - Keep a tab with `status: "handoff"` only when the task is still in progress and the user or a later turn should continue from the current task group, such as a page waiting for user input, login, approval, payment, CAPTCHA, or an unfinished workflow.
-- Handoff tabs stay in the task session group. Deliverable tabs move to the shared `✅ Open Browser Use` tab group.
+- Handoff tabs stay in the task session group but release exclusive session ownership, so another task can claim them immediately. Deliverable tabs move to the shared `✅ Open Browser Use` tab group.
 - Run finalization as the last Open Browser Use browser action for the turn. Do not call Open Browser Use browser tools after finalizing; if more browser work is needed, do it first and finalize once with the final tab disposition.
 
 ## File Choosers, Downloads, And Clipboard

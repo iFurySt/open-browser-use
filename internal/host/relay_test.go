@@ -139,6 +139,42 @@ func TestRelayBroadcastsExtensionNotificationsToSDKClients(t *testing.T) {
 	}
 }
 
+func TestRelayDropsOrphanedRemappedResponses(t *testing.T) {
+	relay := NewRelay(Config{}, strings.NewReader(""), nil)
+	clientA, peerA := net.Pipe()
+	clientB, peerB := net.Pipe()
+	defer clientA.Close()
+	defer peerA.Close()
+	defer clientB.Close()
+	defer peerB.Close()
+	relay.clients[1] = &clientConn{id: 1, conn: clientA}
+	relay.clients[2] = &clientConn{id: 2, conn: clientB}
+
+	payload, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "obu:999",
+		"result":  map[string]any{"late": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relay.dispatchExtensionPayload(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	for index, peer := range []net.Conn{peerA, peerB} {
+		_ = peer.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+		var received map[string]any
+		err := wire.ReadJSON(peer, &received)
+		if err == nil {
+			t.Fatalf("client %d unexpectedly received orphan response: %#v", index+1, received)
+		}
+		if timeout, ok := err.(net.Error); !ok || !timeout.Timeout() {
+			t.Fatalf("client %d expected read timeout, got %v", index+1, err)
+		}
+	}
+}
+
 func TestActiveSocketRecordLifecycle(t *testing.T) {
 	socketDir := t.TempDir()
 	socketPath := filepath.Join(socketDir, "obu.sock")

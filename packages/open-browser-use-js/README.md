@@ -189,8 +189,8 @@ unsubscribe();
 
 ## Common Methods
 
-- Browser/session: `getInfo`, `nameSession`, `turnEnded`
-- Tabs: `createTab`, `getTabs`, `getUserTabs`, `claimUserTab`, `finalizeTabs`
+- Browser/session: `getInfo`, `nameSession`, `focusState`, `turnEnded`, `reconcileOperation`
+- Tabs: `createTab`, `getTabs`, `getUserTabs`, `claimUserTab`, `claimStatus`, `closeTab`, `finalizeTabs`
 - CDP: `attach`, `detach`, `executeCdp`, `request`
 - Input: `moveMouse`
 - File chooser: `waitForFileChooser`, `setFileChooserFiles`

@@ -67,6 +67,7 @@ test("high-level browser tabs can goto, wait for load state, and read a DOM snap
         }
         const request = JSON.parse(pending.subarray(4, 4 + length).toString("utf8"));
         pending = pending.subarray(4 + length);
+        assert.match(request.params.operation_id, /^op-js-/);
         calls.push([request.method, request.params.method ?? null]);
         let result = {};
         if (request.method === "createTab") {

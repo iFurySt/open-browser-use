@@ -56,9 +56,15 @@ class OpenBrowserUseClient:
             raise RuntimeError("Open Browser Use socket is not connected")
         request_id = self._next_id
         self._next_id += 1
+        operation_id = (
+            params.get("operation_id")
+            if params and isinstance(params.get("operation_id"), str) and params.get("operation_id")
+            else f"op-python-{time.time_ns()}-{request_id}"
+        )
         merged_params: JsonObject = {
             "session_id": self.session_id,
             "turn_id": self.turn_id,
+            "operation_id": operation_id,
         }
         if params:
             merged_params.update(params)
@@ -69,17 +75,25 @@ class OpenBrowserUseClient:
             "params": merged_params,
         }
         self._socket.sendall(encode_frame(request))
-        while True:
-            response = read_frame(self._socket)
-            if response.get("id") == request_id:
-                if "error" in response:
-                    message = response["error"].get("message", "Open Browser Use request failed")
-                    raise RuntimeError(message)
-                return response.get("result")
-            if "id" not in response and isinstance(response.get("method"), str):
-                self._dispatch_notification(response)
-                continue
-            raise RuntimeError(f"unexpected response id: {response.get('id')!r}")
+        try:
+            while True:
+                response = read_frame(self._socket)
+                if response.get("id") == request_id:
+                    if "error" in response:
+                        message = response["error"].get("message", "Open Browser Use request failed")
+                        raise RuntimeError(message)
+                    return response.get("result")
+                if "id" not in response and isinstance(response.get("method"), str):
+                    self._dispatch_notification(response)
+                    continue
+                # A stale response must never satisfy or fail the current
+                # request. Keep reading for this request's exact id.
+        except (socket.timeout, TimeoutError) as error:
+            self.close()
+            raise TimeoutError(
+                f"Open Browser Use request timed out: {method} "
+                f"(operation_id={operation_id}, outcome=unknown; call reconcile_operation)"
+            ) from error
 
     def _dispatch_notification(self, notification: JsonObject) -> None:
         for handler in list(self._notification_handlers):
@@ -102,6 +116,18 @@ class OpenBrowserUseClient:
 
     def claim_user_tab(self, tab_id: int) -> Any:
         return self.request("claimUserTab", {"tabId": tab_id})
+
+    def claim_status(self, tab_id: int) -> Any:
+        return self.request("claimStatus", {"tabId": tab_id})
+
+    def close_tab(self, tab_id: int) -> Any:
+        return self.request("closeTab", {"tabId": tab_id})
+
+    def focus_state(self) -> Any:
+        return self.request("focusState")
+
+    def reconcile_operation(self, operation_id: str) -> Any:
+        return self.request("reconcileOperation", {"operation_id": operation_id})
 
     def finalize_tabs(self, keep: list[JsonObject]) -> Any:
         return self.request("finalizeTabs", {"keep": keep})

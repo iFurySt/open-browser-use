@@ -152,7 +152,7 @@ function createChromeFake() {
 
 async function loadBackground(bgSource, chromeFake) {
   const inject = `globalThis.__obu_export = (name, value) => { globalThis[name] = value; };`;
-  const exporter = `__obu_export("BrowserBackend", BrowserBackend);`;
+  const exporter = `__obu_export("BrowserBackend", BrowserBackend); __obu_export("JsonRpcPeer", JsonRpcPeer);`;
   const context = vm.createContext({
     chrome: chromeFake,
     console,
@@ -174,7 +174,7 @@ async function loadBackground(bgSource, chromeFake) {
     context
   );
   vm.runInContext(bgSource + "\n" + exporter, context);
-  return { BrowserBackend: context.BrowserBackend };
+  return { BrowserBackend: context.BrowserBackend, JsonRpcPeer: context.JsonRpcPeer };
 }
 
 // Wire a session group directly into the backend's store so finalizeTabs sees
@@ -213,7 +213,7 @@ async function run() {
       attached: [agentTab, handoffTab]
     });
 
-    await backend.finalizeTabs({
+    const receipt = await backend.finalizeTabs({
       session_id: "sess-handoff",
       turn_id: "turn-1",
       keep: [{ tabId: handoffTab, status: "handoff" }]
@@ -224,8 +224,30 @@ async function run() {
     assert.ok(state.tabs.has(handoffTab), "handoff tab must stay open");
     assert.equal(state.tabs.get(handoffTab).groupId, groupId, "handoff tab must stay in its task group");
     assert.equal(state.tabs.has(agentTab), false, "unkept agent tab must be closed");
-    assert.ok(backend.store.state.sessions["sess-handoff"], "session persists while a handoff tab is kept");
-    console.log("test 1 ok: handoff tab detached but kept open and grouped");
+    assert.equal(
+      backend.store.state.sessions["sess-handoff"],
+      undefined,
+      "handoff must release exclusive session ownership"
+    );
+    assert.equal(receipt.ownershipReleased, true, "finalize receipt must confirm ownership release");
+    assert.equal(receipt.dispositions.handoff.join(","), String(handoffTab));
+
+    const releasedStatus = await backend.claimStatus({
+      session_id: "sess-next",
+      turn_id: "turn-2",
+      tabId: handoffTab
+    });
+    assert.equal(releasedStatus.claimable, true);
+    assert.equal(releasedStatus.ownerSessionId, null);
+
+    const reclaimed = await backend.claimUserTab({
+      session_id: "sess-next",
+      turn_id: "turn-2",
+      tabId: handoffTab
+    });
+    assert.equal(reclaimed.receipt.claimed, true, "a second session must be able to claim a handoff tab");
+    assert.equal(reclaimed.receipt.sessionId, "sess-next");
+    console.log("test 1 ok: handoff tab detached, ownership released, and reclaimable");
   }
 
   // === Test 2: keep=[] closes agent tab, detaches, and ends the session ===
@@ -246,7 +268,7 @@ async function run() {
       attached: [agentTab]
     });
 
-    await backend.finalizeTabs({
+    const receipt = await backend.finalizeTabs({
       session_id: "sess-close",
       turn_id: "turn-1",
       keep: []
@@ -256,7 +278,78 @@ async function run() {
     assert.equal(state.tabs.has(agentTab), false, "agent tab must be closed");
     assert.equal(state.groups.has(groupId), false, "empty task group must be gone");
     assert.equal(backend.store.state.sessions["sess-close"], undefined, "session must be removed when nothing is kept");
+    assert.equal(receipt.ownershipReleased, true, "finalize receipt must confirm ownership release");
+    assert.equal(receipt.dispositions.closed.join(","), String(agentTab));
     console.log("test 2 ok: keep=[] closes tab, detaches, ends session");
+  }
+
+  // === Test 3: operation outcomes are cached and duplicate ids never replay ===
+  {
+    const { chrome } = createChromeFake();
+    const { BrowserBackend, JsonRpcPeer } = await loadBackground(bgSource, chrome);
+    const backend = new BrowserBackend();
+    await backend.store.ready;
+    let calls = 0;
+    backend.testMutation = async () => ({ calls: ++calls });
+    const sent = [];
+    const transport = {
+      setMessageCallback(callback) {
+        this.callback = callback;
+      },
+      sendMessage(message) {
+        sent.push(message);
+      }
+    };
+    const peer = new JsonRpcPeer(transport, backend);
+    const request = {
+      jsonrpc: "2.0",
+      id: "request-1",
+      method: "testMutation",
+      params: {
+        session_id: "sess-op",
+        turn_id: "turn-op",
+        operation_id: "operation-1"
+      }
+    };
+    await peer.handleMessage(request);
+    await peer.handleMessage({ ...request, id: "request-2" });
+
+    assert.equal(calls, 1, "duplicate operation id must not replay a mutation");
+    assert.equal(sent.length, 2, "both callers should receive the cached result");
+    assert.equal(sent[1].result.calls, 1, "duplicate request must receive original cached result");
+    const reconciled = await backend.reconcileOperation({ operation_id: "operation-1" });
+    assert.equal(reconciled.found, true);
+    assert.equal(reconciled.operation.status, "completed");
+    assert.equal(reconciled.operation.result.calls, 1);
+    console.log("test 3 ok: operation outcome is durable and duplicate-safe");
+  }
+
+  // === Test 4: raw CDP cannot activate or raise a tab ===
+  {
+    const { chrome, helpers } = createChromeFake();
+    const { BrowserBackend } = await loadBackground(bgSource, chrome);
+    const backend = new BrowserBackend();
+    await backend.store.ready;
+    const groupId = helpers.createGroup();
+    const tabId = helpers.createTab({ groupId });
+    await seedSession(backend, chrome, {
+      sessionId: "sess-focus",
+      groupId,
+      tabOrigins: { [tabId]: "agent" },
+      activeTabId: tabId,
+      attached: [tabId]
+    });
+    await assert.rejects(
+      backend.executeCdp({
+        session_id: "sess-focus",
+        turn_id: "turn-focus",
+        target: { tabId },
+        method: "Page.bringToFront",
+        commandParams: {}
+      }),
+      /background-only/
+    );
+    console.log("test 4 ok: foreground-changing CDP is blocked");
   }
 
   console.log("\nAll finalizeTabs detach tests passed.");

@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.41"
+const version = "0.1.42"
 const defaultChromeExtensionID = "bgjoihaepiejlfjinojjfgokghnodnhd"
 const defaultCLISessionID = "obu-cli"
 const defaultMCPSessionID = "obu-mcp"
@@ -99,7 +99,9 @@ func newRootCommand() *cobra.Command {
 		newSimpleRPCCommand("user-tabs", "getUserTabs", "List user Chrome tabs"),
 		newHistoryCommand(),
 		newClaimTabCommand(),
+		newClaimStatusCommand(),
 		newFinalizeTabsCommand(),
+		newReconcileOperationCommand(),
 		newNameSessionCommand(),
 		newCdpCommand(),
 		newMoveMouseCommand(),
@@ -1243,6 +1245,25 @@ func newClaimTabCommand() *cobra.Command {
 	return cmd
 }
 
+func newClaimStatusCommand() *cobra.Command {
+	var options socketOptions
+	var tabID int
+	cmd := &cobra.Command{
+		Use:   "claim-status",
+		Short: "Inspect ownership of a Chrome tab",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if tabID <= 0 {
+				return errors.New("claim-status requires --tab-id")
+			}
+			return invokeAndWrite(options, "claimStatus", map[string]any{"tabId": tabID})
+		},
+	}
+	addSocketFlags(cmd, &options)
+	cmd.Flags().IntVar(&tabID, "tab-id", 0, "Chrome tab id to inspect")
+	return cmd
+}
+
 func newFinalizeTabsCommand() *cobra.Command {
 	var options socketOptions
 	var keepJSON string
@@ -1260,6 +1281,25 @@ func newFinalizeTabsCommand() *cobra.Command {
 	}
 	addSocketFlags(cmd, &options)
 	cmd.Flags().StringVar(&keepJSON, "keep", "[]", `tabs to keep, e.g. '[{"tabId":123,"status":"handoff"}]'`)
+	return cmd
+}
+
+func newReconcileOperationCommand() *cobra.Command {
+	var options socketOptions
+	var operationID string
+	cmd := &cobra.Command{
+		Use:   "reconcile-operation",
+		Short: "Read the durable outcome of a timed-out operation",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if operationID == "" {
+				return errors.New("reconcile-operation requires --operation-id")
+			}
+			return invokeAndWrite(options, "reconcileOperation", map[string]any{"operation_id": operationID})
+		},
+	}
+	addSocketFlags(cmd, &options)
+	cmd.Flags().StringVar(&operationID, "operation-id", "", "operation id from an unknown-outcome error")
 	return cmd
 }
 
@@ -1844,12 +1884,42 @@ func (runner *actionRunner) runAction(action string, args []string) (map[string]
 			runner.currentTabID = tabID
 		}
 		return response, tabID, err
+	case "claim-status":
+		tabID, err := firstIntArg(args, "--tab-id")
+		if err != nil {
+			return nil, 0, fmt.Errorf("claim-status requires tab id: %w", err)
+		}
+		return runner.invoke("claimStatus", map[string]any{"tabId": tabID})
+	case "active-tab":
+		return runner.runActiveTabAction()
 	case "navigate":
 		return runner.runNavigateAction(args)
+	case "back":
+		return runner.runHistoryNavigationAction(args, -1)
+	case "forward":
+		return runner.runHistoryNavigationAction(args, 1)
 	case "wait-load":
 		return runner.runWaitLoadAction(args)
 	case "page-info":
 		return runner.runPageInfoAction(args)
+	case "scroll":
+		return runner.runScrollAction(args)
+	case "extract":
+		return runner.runExtractAction(args)
+	case "wait-for":
+		return runner.runWaitForAction(args)
+	case "click-element":
+		return runner.runClickElementAction(args)
+	case "type-into":
+		return runner.runTypeIntoAction(args)
+	case "select-option":
+		return runner.runSelectOptionAction(args)
+	case "screenshot":
+		return runner.runScreenshotAction(args)
+	case "focus-state":
+		return runner.invoke("focusState", map[string]any{})
+	case "close-tab":
+		return runner.runCloseTabAction(args)
 	case "cdp":
 		return runner.runCDPAction(args)
 	case "history":
@@ -1862,11 +1932,226 @@ func (runner *actionRunner) runAction(action string, args []string) (map[string]
 		return runner.runSetFileChooserFilesAction(args)
 	case "finalize-tabs":
 		return runner.runFinalizeTabsAction(args)
+	case "reconcile-operation":
+		operationID := stringFlagOrPositional(args, "--operation-id", 0)
+		if operationID == "" {
+			return nil, 0, errors.New("reconcile-operation requires operation id")
+		}
+		return runner.invoke("reconcileOperation", map[string]any{"operation_id": operationID})
 	case "call":
 		return runner.runCallAction(args)
 	default:
 		return nil, 0, fmt.Errorf("unsupported action %q", action)
 	}
+}
+
+func (runner *actionRunner) runActiveTabAction() (map[string]any, int, error) {
+	response, _, err := runner.invoke("getTabs", map[string]any{})
+	if err != nil {
+		return nil, 0, err
+	}
+	tabs, _ := response["result"].([]any)
+	for _, raw := range tabs {
+		tab, _ := raw.(map[string]any)
+		if active, _ := tab["active"].(bool); active {
+			if tabID, ok := numberAsInt(tab["id"]); ok {
+				runner.currentTabID = tabID
+				return map[string]any{"result": map[string]any{"tab": tab}}, tabID, nil
+			}
+		}
+	}
+	return nil, 0, errors.New("session has no active tab")
+}
+
+func (runner *actionRunner) runCloseTabAction(args []string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	response, _, err := runner.invoke("closeTab", map[string]any{"tabId": tabID})
+	if err == nil && runner.currentTabID == tabID {
+		runner.currentTabID = 0
+	}
+	return response, tabID, err
+}
+
+func (runner *actionRunner) runHistoryNavigationAction(args []string, delta int) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := runner.attach(tabID); err != nil {
+		return nil, 0, err
+	}
+	history, _, err := runner.invoke("executeCdp", map[string]any{
+		"target": map[string]any{"tabId": tabID}, "method": "Page.getNavigationHistory", "commandParams": map[string]any{},
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	value, _ := history["result"].(map[string]any)
+	currentIndex, ok := numberAsInt(value["currentIndex"])
+	if !ok {
+		return nil, 0, errors.New("navigation history response did not include currentIndex")
+	}
+	entries, _ := value["entries"].([]any)
+	targetIndex := currentIndex + delta
+	if targetIndex < 0 || targetIndex >= len(entries) {
+		return nil, 0, errors.New("no navigation history entry in requested direction")
+	}
+	entry, _ := entries[targetIndex].(map[string]any)
+	entryID, ok := numberAsInt(entry["id"])
+	if !ok {
+		return nil, 0, errors.New("navigation history entry did not include id")
+	}
+	return runner.invoke("executeCdp", map[string]any{
+		"target": map[string]any{"tabId": tabID}, "method": "Page.navigateToHistoryEntry", "commandParams": map[string]any{"entryId": entryID},
+	})
+}
+
+func (runner *actionRunner) evaluate(tabID int, expression string) (map[string]any, int, error) {
+	if err := runner.attach(tabID); err != nil {
+		return nil, 0, err
+	}
+	return runner.invoke("executeCdp", map[string]any{
+		"target":        map[string]any{"tabId": tabID},
+		"method":        "Runtime.evaluate",
+		"commandParams": map[string]any{"expression": expression, "returnByValue": true, "awaitPromise": true},
+	})
+}
+
+func (runner *actionRunner) runScrollAction(args []string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	selector := stringFlag(args, "--selector")
+	deltaX, _ := intFlag(args, "--delta-x")
+	deltaY := 700
+	if value, ok := intFlag(args, "--delta-y"); ok {
+		deltaY = value
+	}
+	selectorJSON, _ := json.Marshal(selector)
+	expression := fmt.Sprintf(`(() => { const selector = %s; const target = selector ? document.querySelector(selector) : null; if (selector && !target) throw new Error("selector not found: " + selector); if (target) target.scrollIntoView({block:"center",inline:"nearest"}); else window.scrollBy({left:%d,top:%d,behavior:"instant"}); return {x:scrollX,y:scrollY,selector:selector || null}; })()`, selectorJSON, deltaX, deltaY)
+	return runner.evaluate(tabID, expression)
+}
+
+func (runner *actionRunner) runExtractAction(args []string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	selector := stringFlag(args, "--selector")
+	if selector == "" {
+		selector = "body"
+	}
+	maxItems := 20
+	if value, ok := intFlag(args, "--max-items"); ok && value > 0 {
+		maxItems = value
+	}
+	maxChars := 4000
+	if value, ok := intFlag(args, "--max-chars"); ok && value > 0 {
+		maxChars = value
+	}
+	selectorJSON, _ := json.Marshal(selector)
+	expression := fmt.Sprintf(`(() => ({ selector:%s, items:[...document.querySelectorAll(%s)].slice(0,%d).map((element,index) => ({index,text:(element.innerText || element.textContent || "").trim().slice(0,%d),tag:element.tagName.toLowerCase()})) }))()`, selectorJSON, selectorJSON, maxItems, maxChars)
+	return runner.evaluate(tabID, expression)
+}
+
+func (runner *actionRunner) runWaitForAction(args []string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	selector, textNeedle, urlNeedle := stringFlag(args, "--selector"), stringFlag(args, "--text"), stringFlag(args, "--url-contains")
+	if selector == "" && textNeedle == "" && urlNeedle == "" {
+		return nil, 0, errors.New("wait-for requires --selector, --text, or --url-contains")
+	}
+	deadline := time.Now().Add(runner.options.timeout)
+	selectorJSON, _ := json.Marshal(selector)
+	textJSON, _ := json.Marshal(textNeedle)
+	urlJSON, _ := json.Marshal(urlNeedle)
+	expression := fmt.Sprintf(`(() => { const selector=%s, text=%s, url=%s; return {matched:(!selector || !!document.querySelector(selector)) && (!text || (document.body?.innerText || "").includes(text)) && (!url || location.href.includes(url)), url:location.href}; })()`, selectorJSON, textJSON, urlJSON)
+	for {
+		response, _, evalErr := runner.evaluate(tabID, expression)
+		if evalErr != nil {
+			return nil, 0, evalErr
+		}
+		if value, ok := runtimeEvaluateValue(response).(map[string]any); ok {
+			if matched, _ := value["matched"].(bool); matched {
+				return response, tabID, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, 0, fmt.Errorf("timed out waiting for page condition in tab %d", tabID)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func (runner *actionRunner) runClickElementAction(args []string) (map[string]any, int, error) {
+	return runner.runElementMutationAction(args, "click")
+}
+
+func (runner *actionRunner) runTypeIntoAction(args []string) (map[string]any, int, error) {
+	return runner.runElementMutationAction(args, "type")
+}
+
+func (runner *actionRunner) runSelectOptionAction(args []string) (map[string]any, int, error) {
+	return runner.runElementMutationAction(args, "select")
+}
+
+func (runner *actionRunner) runElementMutationAction(args []string, action string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	selector := stringFlagOrPositional(args, "--selector", 0)
+	if selector == "" {
+		return nil, 0, fmt.Errorf("%s requires selector", action)
+	}
+	value := stringFlag(args, "--text")
+	if action == "select" {
+		value = stringFlag(args, "--value")
+	}
+	selectorJSON, _ := json.Marshal(selector)
+	valueJSON, _ := json.Marshal(value)
+	var expression string
+	switch action {
+	case "click":
+		expression = fmt.Sprintf(`(() => { const element=document.querySelector(%s); if(!element) throw new Error("selector not found"); element.click(); return {clicked:true,tag:element.tagName.toLowerCase(),text:(element.innerText || element.textContent || "").trim().slice(0,200)}; })()`, selectorJSON)
+	case "type":
+		expression = fmt.Sprintf(`(() => { const element=document.querySelector(%s); if(!element) throw new Error("selector not found"); element.focus({preventScroll:true}); const value=%s; if("value" in element) element.value=value; else if(element.isContentEditable) element.textContent=value; else throw new Error("element is not editable"); element.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertText",data:value})); element.dispatchEvent(new Event("change",{bubbles:true})); return {typed:true,tag:element.tagName.toLowerCase(),value:"value" in element ? element.value : element.textContent}; })()`, selectorJSON, valueJSON)
+	default:
+		expression = fmt.Sprintf(`(() => { const element=document.querySelector(%s); if(!element) throw new Error("selector not found"); element.value=%s; element.dispatchEvent(new Event("input",{bubbles:true})); element.dispatchEvent(new Event("change",{bubbles:true})); return {selected:true,value:element.value}; })()`, selectorJSON, valueJSON)
+	}
+	return runner.evaluate(tabID, expression)
+}
+
+func (runner *actionRunner) runScreenshotAction(args []string) (map[string]any, int, error) {
+	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
+	if err != nil {
+		return nil, 0, err
+	}
+	format := stringFlag(args, "--format")
+	if format == "" {
+		format = "png"
+	}
+	if format != "png" && format != "jpeg" {
+		return nil, 0, fmt.Errorf("unsupported screenshot format %q", format)
+	}
+	params := map[string]any{"format": format, "fromSurface": true}
+	if quality, ok := intFlag(args, "--quality"); ok && format == "jpeg" {
+		params["quality"] = quality
+	} else if ok {
+		return nil, 0, errors.New("screenshot quality is only valid for jpeg")
+	}
+	if err := runner.attach(tabID); err != nil {
+		return nil, 0, err
+	}
+	return runner.invoke("executeCdp", map[string]any{
+		"target": map[string]any{"tabId": tabID}, "method": "Page.captureScreenshot", "commandParams": params,
+	})
 }
 
 func (runner *actionRunner) runOpenTabAction(args []string) (map[string]any, int, error) {
@@ -2282,10 +2567,14 @@ func positionalArgs(args []string) []string {
 }
 
 func runtimeEvaluateString(response map[string]any) string {
+	value, _ := runtimeEvaluateValue(response).(string)
+	return value
+}
+
+func runtimeEvaluateValue(response map[string]any) any {
 	result, _ := response["result"].(map[string]any)
 	cdpResult, _ := result["result"].(map[string]any)
-	value, _ := cdpResult["value"].(string)
-	return value
+	return cdpResult["value"]
 }
 
 func invokeAndWrite(options socketOptions, method string, params map[string]any) error {
@@ -2313,20 +2602,47 @@ func invokeWithProfile(socketPath string, socketDir string, browser string, prof
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	applySessionDefaults(params, defaultCLISessionID)
+	operationID := ""
+	if method != "reconcileOperation" {
+		if existing, ok := params["operation_id"].(string); ok && existing != "" {
+			operationID = existing
+		} else {
+			operationID = fmt.Sprintf("op-%d-%d", os.Getpid(), time.Now().UnixNano())
+			params["operation_id"] = operationID
+		}
+	}
+	requestID := fmt.Sprintf("cli-%d", time.Now().UnixNano())
 	request := map[string]any{
 		"jsonrpc": "2.0",
-		"id":      "cli-1",
+		"id":      requestID,
 		"method":  method,
 		"params":  params,
 	}
 	if err := wire.WriteJSON(conn, request); err != nil {
 		return nil, err
 	}
-	var response map[string]any
-	if err := wire.ReadJSON(conn, &response); err != nil {
-		return nil, err
+	for {
+		var response map[string]any
+		if err := wire.ReadJSON(conn, &response); err != nil {
+			if operationID != "" {
+				return nil, fmt.Errorf("%w (operation_id=%s, outcome=unknown; use reconcile-operation)", err, operationID)
+			}
+			return nil, err
+		}
+		if responseID, ok := response["id"].(string); ok && responseID == requestID {
+			if rpcError, ok := response["error"].(map[string]any); ok {
+				message, _ := rpcError["message"].(string)
+				if message == "" {
+					message = "Open Browser Use request failed"
+				}
+				return nil, errors.New(message)
+			}
+			return response, nil
+		}
+		// Notifications are broadcast by the native host and a response whose
+		// original client disconnected can arrive late. Neither is the response
+		// to this request, so keep reading until the exact id is observed.
 	}
-	return response, nil
 }
 
 func applySessionDefaults(params map[string]any, sessionID string) {

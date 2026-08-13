@@ -6,6 +6,13 @@ const HEARTBEAT_ALARM_NAME = "open-browser-use-heartbeat";
 const DEFAULT_CDP_TIMEOUT_MS = 10_000;
 const CURSOR_ARRIVAL_TIMEOUT_MS = 1_000;
 const MAX_USER_TABS = 1000;
+const MAX_OPERATION_RECORDS = 128;
+const MAX_CACHED_OPERATION_RESULT_BYTES = 128 * 1024;
+const BACKGROUND_UNSAFE_CDP_METHODS = new Set([
+  "Page.bringToFront",
+  "Target.activateTarget",
+  "Browser.setWindowBounds"
+]);
 const DEFAULT_SESSION_GROUP_TITLE = "Task - OBU";
 const DELIVERABLE_GROUP_TITLE = "✅ Open Browser Use";
 const LEGACY_SESSION_GROUP_TITLE_PATTERN = /^Open Browser Use [0-9a-f]{8}$/i;
@@ -24,16 +31,48 @@ class JsonRpcPeer {
       return;
     }
     const id = message.id;
+    const params = message.params ?? {};
+    const operationId =
+      message.method === "reconcileOperation" || typeof params.operation_id !== "string"
+        ? null
+        : params.operation_id;
+    let operationBegan = false;
     try {
+      if (operationId) {
+        const existing = await this.handlers.beginOperation(operationId, message.method, params);
+        if (existing) {
+          if (existing.status === "failed") {
+            throw new Error(existing.error ?? `Operation ${operationId} failed`);
+          }
+          const result =
+            existing.status === "completed" && Object.hasOwn(existing, "result")
+              ? existing.result
+              : { operation: existing };
+          if (id !== undefined) {
+            this.transport.sendMessage({ jsonrpc: "2.0", id, result });
+          }
+          return;
+        }
+        operationBegan = true;
+      }
       const handler = this.handlers[message.method];
       if (typeof handler !== "function") {
         throw new Error(`No handler registered for method: ${message.method}`);
       }
-      const result = await handler.call(this.handlers, message.params ?? {});
+      const result = await handler.call(this.handlers, params);
+      if (operationId && operationBegan) {
+        await this.handlers.completeOperation(operationId, result ?? {});
+      }
       if (id !== undefined) {
         this.transport.sendMessage({ jsonrpc: "2.0", id, result: result ?? {} });
       }
     } catch (error) {
+      if (operationId && operationBegan) {
+        await this.handlers.failOperation(
+          operationId,
+          error instanceof Error ? error.message : String(error)
+        ).catch(() => {});
+      }
       if (id !== undefined) {
         this.transport.sendMessage({
           jsonrpc: "2.0",
@@ -138,7 +177,7 @@ class NativeTransport {
 
 class SessionStore {
   constructor() {
-    this.state = { sessions: {}, deliverableGroupId: null };
+    this.state = { sessions: {}, operations: {}, deliverableGroupId: null };
     this.ready = this.load();
   }
 
@@ -148,6 +187,7 @@ class SessionStore {
     if (value && typeof value === "object") {
       this.state = {
         sessions: value.sessions && typeof value.sessions === "object" ? value.sessions : {},
+        operations: value.operations && typeof value.operations === "object" ? value.operations : {},
         deliverableGroupId:
           typeof value.deliverableGroupId === "number" ? value.deliverableGroupId : null
       };
@@ -209,6 +249,72 @@ class SessionStore {
       }
     }
     return null;
+  }
+
+  async beginOperation(operationId, method, sessionId) {
+    await this.ready;
+    const existing = this.state.operations[operationId];
+    if (existing && typeof existing === "object") {
+      if (existing.method !== method || existing.sessionId !== sessionId) {
+        throw new Error(
+          `Operation id ${operationId} is already bound to ${existing.method} in another request context`
+        );
+      }
+      return existing;
+    }
+    const startedAt = new Date().toISOString();
+    this.state.operations[operationId] = {
+      operationId,
+      method,
+      sessionId,
+      status: "running",
+      startedAt
+    };
+    this.pruneOperations();
+    await this.save();
+    return null;
+  }
+
+  async completeOperation(operationId, result) {
+    await this.ready;
+    const record = this.state.operations[operationId];
+    if (!record) return;
+    record.status = "completed";
+    record.completedAt = new Date().toISOString();
+    try {
+      if (JSON.stringify(result).length <= MAX_CACHED_OPERATION_RESULT_BYTES) {
+        record.result = result;
+      }
+    } catch {}
+    await this.save();
+  }
+
+  async failOperation(operationId, error) {
+    await this.ready;
+    const record = this.state.operations[operationId];
+    if (!record) return;
+    record.status = "failed";
+    record.completedAt = new Date().toISOString();
+    record.error = error;
+    await this.save();
+  }
+
+  async getOperation(operationId) {
+    await this.ready;
+    return this.state.operations[operationId] ?? null;
+  }
+
+  pruneOperations() {
+    const entries = Object.entries(this.state.operations);
+    if (entries.length <= MAX_OPERATION_RECORDS) return;
+    entries
+      .sort(([, left], [, right]) =>
+        String(left.completedAt ?? left.startedAt ?? "").localeCompare(
+          String(right.completedAt ?? right.startedAt ?? "")
+        )
+      )
+      .slice(0, entries.length - MAX_OPERATION_RECORDS)
+      .forEach(([operationId]) => delete this.state.operations[operationId]);
   }
 }
 
@@ -323,9 +429,41 @@ class BrowserBackend {
         throw new Error(`Tab ${tabId} is already part of browser session ${owner.sessionId}`);
       }
     }
+    const previousGroupId = tab.groupId;
     await this.ensureSessionGroup(session.sessionId, tab.id, "user");
     await this.setSessionActiveTab(session.sessionId, tab.id);
-    return { ...toBrowserTab(tab), active: true };
+    return {
+      ...toBrowserTab(tab),
+      active: true,
+      receipt: {
+        action: "claim",
+        claimed: true,
+        tabId: tab.id,
+        sessionId: session.sessionId,
+        previousGroupId: typeof previousGroupId === "number" ? previousGroupId : -1
+      }
+    };
+  }
+
+  async claimStatus(params) {
+    if (!params || typeof params !== "object") {
+      throw new Error("Missing browser session params");
+    }
+    if (typeof params.session_id !== "string") {
+      throw new Error("Missing required browser session_id");
+    }
+    const tabId = requireTabId(params, "claimStatus");
+    const tab = await chrome.tabs.get(tabId);
+    let owner = null;
+    if (typeof tab.groupId === "number" && tab.groupId !== -1) {
+      owner = await this.store.findSessionByGroup(tab.groupId);
+    }
+    return {
+      tabId,
+      claimable: !owner || owner.sessionId === params.session_id,
+      ownedByCaller: owner?.sessionId === params.session_id,
+      ownerSessionId: owner?.sessionId ?? null
+    };
   }
 
   async finalizeTabs(params) {
@@ -401,16 +539,46 @@ class BrowserBackend {
       delete sessionState.tabOrigins[String(tabId)];
       this.cursorByTabId.delete(tabId);
     }
-    if (handoffTabs.length > 0) {
-      sessionState.activeTabId = handoffTabs.includes(sessionState.activeTabId)
-        ? sessionState.activeTabId
-        : handoffTabs[0];
-      this.activeTabsBySession.set(session.sessionId, sessionState.activeTabId);
-      await this.store.save();
-    } else {
-      this.activeTabsBySession.delete(session.sessionId);
-      await this.store.removeSession(session.sessionId);
+    // A handoff keeps the tab and its visual task group, but it must release
+    // exclusive ownership. Ownership is represented by the persisted session
+    // record, so always remove it after every disposition is complete.
+    this.activeTabsBySession.delete(session.sessionId);
+    await this.store.removeSession(session.sessionId);
+    return {
+      action: "finalize",
+      sessionId: session.sessionId,
+      ownershipReleased: true,
+      dispositions: {
+        closed: agentTabsToClose,
+        released: userTabsToRelease,
+        handoff: handoffTabs,
+        deliverable: deliverableTabs
+      }
+    };
+  }
+
+  async beginOperation(operationId, method, params) {
+    return await this.store.beginOperation(operationId, method, params.session_id ?? null);
+  }
+
+  async completeOperation(operationId, result) {
+    await this.store.completeOperation(operationId, result);
+  }
+
+  async failOperation(operationId, error) {
+    await this.store.failOperation(operationId, error);
+  }
+
+  async reconcileOperation(params) {
+    const operationId =
+      typeof params.operation_id === "string" ? params.operation_id : params.operationId;
+    if (typeof operationId !== "string" || !operationId) {
+      throw new Error("reconcileOperation requires operation_id");
     }
+    const operation = await this.store.getOperation(operationId);
+    return operation
+      ? { found: true, operation }
+      : { found: false, operation: { operationId, status: "unknown" } };
   }
 
   async nameSession(params) {
@@ -445,6 +613,45 @@ class BrowserBackend {
     await this.detachTab(tabId);
   }
 
+  async closeTab(params) {
+    const session = await this.requireSession(params);
+    await this.requireSessionTab(params, "closeTab");
+    const tabId = requireTabId(params, "closeTab");
+    const sessionState = await this.store.getSession(session.sessionId);
+    await this.detachTab(tabId);
+    await chrome.tabs.remove(tabId);
+    delete sessionState.tabOrigins[String(tabId)];
+    this.cursorByTabId.delete(tabId);
+    if (sessionState.activeTabId === tabId) {
+      sessionState.activeTabId = null;
+      this.activeTabsBySession.delete(session.sessionId);
+    }
+    const remainingTabs = await this.getSessionTabs(session.sessionId);
+    if (remainingTabs.length === 0) {
+      await this.store.removeSession(session.sessionId);
+    } else {
+      await this.store.save();
+    }
+    return {
+      action: "close-tab",
+      tabId,
+      closed: true,
+      ownershipReleased: true
+    };
+  }
+
+  async focusState(params) {
+    await this.requireSession(params);
+    const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    const activeTabs = await chrome.tabs.query({ active: true });
+    return {
+      focusedWindowId: windows.find((window) => window.focused)?.id ?? null,
+      activeTabs: activeTabs
+        .filter(hasTabId)
+        .map((tab) => ({ tabId: tab.id, windowId: tab.windowId ?? null }))
+    };
+  }
+
   async executeCdp(params) {
     await this.requireSession(params);
     const target = params.target && typeof params.target === "object" ? params.target : {};
@@ -454,6 +661,11 @@ class BrowserBackend {
       if (!this.attachedTabs.has(tabId)) {
         throw new Error("Debugger unattached");
       }
+    }
+    if (BACKGROUND_UNSAFE_CDP_METHODS.has(params.method)) {
+      throw new Error(
+        `CDP method ${params.method} is blocked because Open Browser Use is background-only`
+      );
     }
     const timeoutMs =
       typeof params.timeoutMs === "number" && params.timeoutMs > 0
@@ -711,6 +923,12 @@ class BrowserBackend {
     sessionState.activeTabId = null;
     await this.store.save();
     await Promise.allSettled(tabs.filter(hasTabId).map((tab) => this.publishCursorState(tab.id)));
+    return {
+      action: "turn-ended",
+      sessionId: session.sessionId,
+      detachedTabs: tabs.filter(hasTabId).map((tab) => tab.id),
+      ownershipReleased: false
+    };
   }
 
   async executeUnhandledCommand(params) {

@@ -265,7 +265,9 @@ The action plan format is intentionally small: one action per line, comments
 with `#`, shell-like quotes, shared session/turn, and a default tab set by
 `open-tab` or `claim-tab`. Supported actions include `ping`, `info`, `tabs`,
 `user-tabs`, `history`, `name-session`, `open-tab`, `claim-tab`, `navigate`,
-`wait-load`, `page-info`, `cdp`, `move-mouse`, `wait-file-chooser`,
+`claim-status`, `active-tab`, `back`, `forward`, `wait-load`, `page-info`,
+`scroll`, `extract`, `wait-for`, `click-element`, `type-into`,
+`select-option`, `screenshot`, `focus-state`, `close-tab`, `cdp`, `move-mouse`, `wait-file-chooser`,
 `set-file-chooser-files`, `finalize-tabs`, `turn-ended`, and `call`.
 
 ## MCP Server
@@ -283,9 +285,15 @@ args = ["mcp", "--session-id", "obu-<task-or-conversation-id>"]
 mirror the CLI action surface:
 
 - `ping`, `info`, `tabs`, `user_tabs`, `history`
-- `open_tab`, `claim_tab`, `navigate`, `wait_load`, `page_info`
+- `open_tab`, `claim_tab`, `claim_status`, `active_tab`, `navigate`, `back`, `forward`, `wait_load`, `page_info`
+- `scroll`, `extract`, `wait_for`, `click_element`, `type_into`, `select_option`, `screenshot`, `focus_state`, `close_tab`
 - `cdp`, `move_mouse`, `wait_file_chooser`, `set_file_chooser_files`
-- `name_session`, `finalize_tabs`, `turn_ended`, `call`, `run_action_plan`
+- `name_session`, `finalize_tabs`, `turn_ended`, `reconcile_operation`, `call`, `run_action_plan`
+
+Every SDK request carries an `operation_id`. A timeout is an unknown outcome,
+not permission to replay the action. Use `reconcileOperation`,
+`reconcile_operation`, or `ReconcileOperation` with the reported id before
+deciding what to do next.
 
 Pass `--socket` or `--socket-dir` in the MCP `args` only when the runtime needs
 an explicit Open Browser Use socket. Otherwise the server uses the same socket

@@ -50,9 +50,14 @@ export class OpenBrowserUseClient {
             throw new Error("Open Browser Use socket is not connected");
         }
         const id = String(this.#nextId++);
+        const suppliedOperationId = params.operation_id;
+        const operationId = typeof suppliedOperationId === "string" && suppliedOperationId
+            ? suppliedOperationId
+            : `op-js-${process.pid}-${Date.now()}-${id}`;
         const mergedParams = {
             session_id: this.sessionId,
             turn_id: this.turnId,
+            operation_id: operationId,
             ...params
         };
         const message = {
@@ -65,9 +70,9 @@ export class OpenBrowserUseClient {
         const promise = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.#pending.delete(id);
-                reject(new Error(`Open Browser Use request timed out: ${method}`));
+                reject(new Error(`Open Browser Use request timed out: ${method} (operation_id=${operationId}, outcome=unknown; call reconcileOperation)`));
             }, this.timeoutMs);
-            this.#pending.set(id, { resolve, reject, timeout });
+            this.#pending.set(id, { resolve, reject, timeout, operationId });
         });
         socket.write(payload);
         return await promise;
@@ -89,6 +94,18 @@ export class OpenBrowserUseClient {
     }
     claimUserTab(tabId) {
         return this.request("claimUserTab", { tabId });
+    }
+    claimStatus(tabId) {
+        return this.request("claimStatus", { tabId });
+    }
+    closeTab(tabId) {
+        return this.request("closeTab", { tabId });
+    }
+    focusState() {
+        return this.request("focusState");
+    }
+    reconcileOperation(operationId) {
+        return this.request("reconcileOperation", { operation_id: operationId });
     }
     finalizeTabs(keep) {
         return this.request("finalizeTabs", { keep });

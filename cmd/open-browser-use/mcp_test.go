@@ -54,7 +54,11 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 			t.Fatalf("expected tool %q to include inputSchema, got %#v", name, tool)
 		}
 	}
-	for _, name := range []string{"user_tabs", "open_tab", "cdp", "run_action_plan"} {
+	for _, name := range []string{
+		"user_tabs", "open_tab", "claim_status", "active_tab", "scroll", "extract",
+		"wait_for", "click_element", "type_into", "select_option", "screenshot",
+		"focus_state", "close_tab", "reconcile_operation", "cdp", "run_action_plan",
+	} {
 		if !names[name] {
 			t.Fatalf("expected MCP tools to include %q, got %#v", name, names)
 		}
@@ -142,6 +146,103 @@ func TestMCPToolCallInvokesBrowserSocket(t *testing.T) {
 	content, _ := callResult["content"].([]any)
 	if len(content) != 1 {
 		t.Fatalf("expected text content mirror, got %#v", callResult["content"])
+	}
+}
+
+func TestMCPExtractUsesBackgroundRuntimeEvaluation(t *testing.T) {
+	socketDir, err := os.MkdirTemp("/tmp", "obu-mcp-extract-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(socketDir)
+	socketPath := filepath.Join(socketDir, "browser.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	requests := make(chan map[string]any, 2)
+	serverDone := make(chan error, 1)
+	go func() {
+		for index := 0; index < 2; index++ {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				serverDone <- acceptErr
+				return
+			}
+			var request map[string]any
+			if readErr := wire.ReadJSON(conn, &request); readErr != nil {
+				_ = conn.Close()
+				serverDone <- readErr
+				return
+			}
+			requests <- request
+			result := map[string]any{}
+			if request["method"] == "executeCdp" {
+				result = map[string]any{"result": map[string]any{"value": map[string]any{
+					"selector": ".comment", "items": []any{map[string]any{"text": "hello"}},
+				}}}
+			}
+			if writeErr := wire.WriteJSON(conn, map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": result}); writeErr != nil {
+				_ = conn.Close()
+				serverDone <- writeErr
+				return
+			}
+			_ = conn.Close()
+		}
+		serverDone <- nil
+	}()
+
+	server := newMCPServer(socketOptions{socketPath: socketPath, timeout: time.Second})
+	result, err := server.runTool("extract", map[string]any{
+		"tab_id": 77, "selector": ".comment", "max_items": 4, "max_chars": 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil {
+		t.Fatal("expected extract result")
+	}
+	attachRequest := <-requests
+	cdpRequest := <-requests
+	if attachRequest["method"] != "attach" || cdpRequest["method"] != "executeCdp" {
+		t.Fatalf("expected attach then executeCdp, got %#v then %#v", attachRequest["method"], cdpRequest["method"])
+	}
+	params, _ := cdpRequest["params"].(map[string]any)
+	if params["method"] != "Runtime.evaluate" {
+		t.Fatalf("expected Runtime.evaluate, got %#v", params["method"])
+	}
+	commandParams, _ := params["commandParams"].(map[string]any)
+	expression, _ := commandParams["expression"].(string)
+	if !strings.Contains(expression, `document.querySelectorAll(".comment")`) {
+		t.Fatalf("expected bounded selector extraction expression, got %q", expression)
+	}
+	if strings.Contains(expression, "bringToFront") {
+		t.Fatalf("extract must not activate Chrome, got %q", expression)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMCPScreenshotReturnsImageContentWithoutTextDuplication(t *testing.T) {
+	result, err := mcpScreenshotResult(map[string]any{
+		"result": map[string]any{"data": "aW1hZ2U="},
+	}, "png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ := result["content"].([]map[string]any)
+	if len(content) != 1 || content[0]["type"] != "image" || content[0]["mimeType"] != "image/png" {
+		t.Fatalf("expected MCP image content, got %#v", result)
+	}
+	if _, hasText := content[0]["text"]; hasText {
+		t.Fatalf("screenshot must not duplicate base64 into text content: %#v", content[0])
+	}
+	structured, _ := result["structuredContent"].(map[string]any)
+	if structured["format"] != "png" {
+		t.Fatalf("expected structured screenshot metadata, got %#v", structured)
 	}
 }
 

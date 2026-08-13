@@ -251,6 +251,14 @@ func mcpTools() []mcpTool {
 			}, []string{"tab_id"}),
 		},
 		{
+			Name:        "claim_status",
+			Title:       "Inspect Tab Claim",
+			Description: "Inspect whether a Chrome tab is claimable and which session owns it.",
+			InputSchema: objectSchema(map[string]any{
+				"tab_id": integerSchema("Chrome tab id to inspect."),
+			}, []string{"tab_id"}),
+		},
+		{
 			Name:        "navigate",
 			Title:       "Navigate Tab",
 			Description: "Navigate a managed tab. If tab_id is omitted, uses the current tab from a prior open_tab or claim_tab call.",
@@ -280,6 +288,85 @@ func mcpTools() []mcpTool {
 			InputSchema: objectSchema(map[string]any{
 				"tab_id": integerSchema("Optional Chrome tab id. Defaults to the current tab."),
 			}, nil),
+		},
+		{
+			Name: "active_tab", Title: "Get Active Session Tab",
+			Description: "Return the logical active tab for this OBU session without activating Chrome.",
+			InputSchema: emptyObjectSchema(),
+		},
+		{
+			Name: "back", Title: "Navigate Back",
+			Description: "Navigate a managed tab one entry back without bringing Chrome to the foreground.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id.")}, nil),
+		},
+		{
+			Name: "forward", Title: "Navigate Forward",
+			Description: "Navigate a managed tab one entry forward without bringing Chrome to the foreground.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id.")}, nil),
+		},
+		{
+			Name: "scroll", Title: "Scroll Page",
+			Description: "Scroll a managed page by an offset or bring a CSS selector into view.",
+			InputSchema: objectSchema(map[string]any{
+				"tab_id":   integerSchema("Optional managed tab id."),
+				"selector": stringSchema("Optional CSS selector to scroll into view."),
+				"delta_x":  integerSchema("Horizontal scroll offset when selector is omitted."),
+				"delta_y":  integerSchema("Vertical scroll offset when selector is omitted; defaults to 700."),
+			}, nil),
+		},
+		{
+			Name: "extract", Title: "Extract Page Content",
+			Description: "Extract bounded text records from elements matching a CSS selector.",
+			InputSchema: objectSchema(map[string]any{
+				"tab_id":    integerSchema("Optional managed tab id."),
+				"selector":  stringSchema("CSS selector; defaults to body."),
+				"max_items": integerSchema("Maximum matching elements; defaults to 20."),
+				"max_chars": integerSchema("Maximum characters per element; defaults to 4000."),
+			}, nil),
+		},
+		{
+			Name: "wait_for", Title: "Wait For Page Condition",
+			Description: "Wait for a CSS selector, visible page text, and/or URL fragment.",
+			InputSchema: objectSchema(map[string]any{
+				"tab_id":       integerSchema("Optional managed tab id."),
+				"selector":     stringSchema("Optional CSS selector that must exist."),
+				"text":         stringSchema("Optional text that must appear in document body."),
+				"url_contains": stringSchema("Optional substring that must appear in the URL."),
+			}, nil),
+		},
+		{
+			Name: "click_element", Title: "Click Element",
+			Description: "Click the first element matching a CSS selector using page DOM events.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id."), "selector": stringSchema("CSS selector.")}, []string{"selector"}),
+		},
+		{
+			Name: "type_into", Title: "Type Into Element",
+			Description: "Set text on the first matching form control and dispatch input/change events.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id."), "selector": stringSchema("CSS selector."), "text": stringSchema("Text to enter.")}, []string{"selector", "text"}),
+		},
+		{
+			Name: "select_option", Title: "Select Option",
+			Description: "Select a value on the first matching select control and dispatch events.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id."), "selector": stringSchema("CSS selector."), "value": stringSchema("Option value.")}, []string{"selector", "value"}),
+		},
+		{
+			Name: "screenshot", Title: "Capture Page Screenshot",
+			Description: "Capture the visible page surface without activating Chrome.",
+			InputSchema: objectSchema(map[string]any{
+				"tab_id":  integerSchema("Optional managed tab id."),
+				"format":  map[string]any{"type": "string", "enum": []string{"png", "jpeg"}, "default": "png"},
+				"quality": integerSchema("JPEG quality from 0 to 100."),
+			}, nil),
+		},
+		{
+			Name: "focus_state", Title: "Read Chrome Focus State",
+			Description: "Read focused-window and active-tab metadata without changing focus.",
+			InputSchema: emptyObjectSchema(),
+		},
+		{
+			Name: "close_tab", Title: "Close Managed Tab",
+			Description: "Close one tab owned by the current session and return a release receipt.",
+			InputSchema: objectSchema(map[string]any{"tab_id": integerSchema("Optional managed tab id.")}, nil),
 		},
 		{
 			Name:        "cdp",
@@ -353,6 +440,14 @@ func mcpTools() []mcpTool {
 			Title:       "End Browser Turn",
 			Description: "Tell Open Browser Use that the current browser-control turn has ended.",
 			InputSchema: emptyObjectSchema(),
+		},
+		{
+			Name:        "reconcile_operation",
+			Title:       "Reconcile Browser Operation",
+			Description: "Read the durable status or cached result of an operation whose immediate outcome was unknown.",
+			InputSchema: objectSchema(map[string]any{
+				"operation_id": stringSchema("Operation id reported by a timeout or unknown-outcome error."),
+			}, []string{"operation_id"}),
 		},
 		{
 			Name:        "call",
@@ -439,6 +534,9 @@ func (server *mcpServer) callTool(params json.RawMessage) (map[string]any, error
 	if err != nil {
 		return mcpToolErrorResult(err.Error()), nil
 	}
+	if request.Name == "screenshot" {
+		return mcpScreenshotResult(output, optionalStringArg(request.Arguments, "format"))
+	}
 	return mcpToolResult(output)
 }
 
@@ -466,12 +564,51 @@ func (server *mcpServer) runTool(name string, arguments map[string]any) (any, er
 			server.runner.currentTabID = tabID
 		}
 		return response, err
+	case "claim_status":
+		tabID, err := requiredIntArg(arguments, "tab_id")
+		if err != nil {
+			return nil, err
+		}
+		return server.invoke("claimStatus", map[string]any{"tabId": tabID})
 	case "navigate":
 		return server.runNavigateTool(arguments)
 	case "wait_load":
 		return server.runWaitLoadTool(arguments)
 	case "page_info":
 		return server.runPageInfoTool(arguments)
+	case "active_tab":
+		response, _, err := server.runner.runActiveTabAction()
+		return response, err
+	case "back", "forward":
+		args, err := optionalTabArgs(arguments)
+		if err != nil {
+			return nil, err
+		}
+		delta := -1
+		if name == "forward" {
+			delta = 1
+		}
+		response, _, err := server.runner.runHistoryNavigationAction(args, delta)
+		return response, err
+	case "scroll":
+		return server.runScrollTool(arguments)
+	case "extract":
+		return server.runExtractTool(arguments)
+	case "wait_for":
+		return server.runWaitForTool(arguments)
+	case "click_element", "type_into", "select_option":
+		return server.runElementTool(name, arguments)
+	case "screenshot":
+		return server.runScreenshotTool(arguments)
+	case "focus_state":
+		return server.invoke("focusState", map[string]any{})
+	case "close_tab":
+		args, err := optionalTabArgs(arguments)
+		if err != nil {
+			return nil, err
+		}
+		response, _, err := server.runner.runCloseTabAction(args)
+		return response, err
 	case "cdp":
 		return server.runCDPTool(arguments)
 	case "move_mouse":
@@ -494,6 +631,12 @@ func (server *mcpServer) runTool(name string, arguments map[string]any) (any, er
 		return server.invoke("nameSession", map[string]any{"name": name})
 	case "turn_ended":
 		return server.invoke("turnEnded", map[string]any{})
+	case "reconcile_operation":
+		operationID, err := requiredStringArg(arguments, "operation_id")
+		if err != nil {
+			return nil, err
+		}
+		return server.invoke("reconcileOperation", map[string]any{"operation_id": operationID})
 	case "call":
 		method, err := requiredStringArg(arguments, "method")
 		if err != nil {
@@ -589,6 +732,118 @@ func (server *mcpServer) runPageInfoTool(arguments map[string]any) (any, error) 
 	return response, err
 }
 
+func optionalTabArgs(arguments map[string]any) ([]string, error) {
+	args := []string{}
+	if tabID, ok, err := optionalIntArg(arguments, "tab_id"); err != nil {
+		return nil, err
+	} else if ok {
+		args = append(args, "--tab-id", strconv.Itoa(tabID))
+	}
+	return args, nil
+}
+
+func (server *mcpServer) runScrollTool(arguments map[string]any) (any, error) {
+	args, err := optionalTabArgs(arguments)
+	if err != nil {
+		return nil, err
+	}
+	if selector := optionalStringArg(arguments, "selector"); selector != "" {
+		args = append(args, "--selector", selector)
+	}
+	for _, field := range []struct{ name, flag string }{{"delta_x", "--delta-x"}, {"delta_y", "--delta-y"}} {
+		if value, ok, parseErr := optionalIntArg(arguments, field.name); parseErr != nil {
+			return nil, parseErr
+		} else if ok {
+			args = append(args, field.flag, strconv.Itoa(value))
+		}
+	}
+	response, _, err := server.runner.runScrollAction(args)
+	return response, err
+}
+
+func (server *mcpServer) runExtractTool(arguments map[string]any) (any, error) {
+	args, err := optionalTabArgs(arguments)
+	if err != nil {
+		return nil, err
+	}
+	if selector := optionalStringArg(arguments, "selector"); selector != "" {
+		args = append(args, "--selector", selector)
+	}
+	for _, field := range []struct{ name, flag string }{{"max_items", "--max-items"}, {"max_chars", "--max-chars"}} {
+		if value, ok, parseErr := optionalIntArg(arguments, field.name); parseErr != nil {
+			return nil, parseErr
+		} else if ok {
+			args = append(args, field.flag, strconv.Itoa(value))
+		}
+	}
+	response, _, err := server.runner.runExtractAction(args)
+	return response, err
+}
+
+func (server *mcpServer) runWaitForTool(arguments map[string]any) (any, error) {
+	args, err := optionalTabArgs(arguments)
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range []struct{ name, flag string }{{"selector", "--selector"}, {"text", "--text"}, {"url_contains", "--url-contains"}} {
+		if value := optionalStringArg(arguments, field.name); value != "" {
+			args = append(args, field.flag, value)
+		}
+	}
+	response, _, err := server.runner.runWaitForAction(args)
+	return response, err
+}
+
+func (server *mcpServer) runElementTool(name string, arguments map[string]any) (any, error) {
+	args, err := optionalTabArgs(arguments)
+	if err != nil {
+		return nil, err
+	}
+	selector, err := requiredStringArg(arguments, "selector")
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, "--selector", selector)
+	var response map[string]any
+	switch name {
+	case "click_element":
+		response, _, err = server.runner.runClickElementAction(args)
+	case "type_into":
+		text, valueErr := requiredStringValueArg(arguments, "text")
+		if valueErr != nil {
+			return nil, valueErr
+		}
+		response, _, err = server.runner.runTypeIntoAction(append(args, "--text", text))
+	default:
+		value, valueErr := requiredStringValueArg(arguments, "value")
+		if valueErr != nil {
+			return nil, valueErr
+		}
+		response, _, err = server.runner.runSelectOptionAction(append(args, "--value", value))
+	}
+	return response, err
+}
+
+func (server *mcpServer) runScreenshotTool(arguments map[string]any) (any, error) {
+	args, err := optionalTabArgs(arguments)
+	if err != nil {
+		return nil, err
+	}
+	if format := optionalStringArg(arguments, "format"); format != "" {
+		args = append(args, "--format", format)
+	}
+	if quality, ok, parseErr := optionalIntArg(arguments, "quality"); parseErr != nil {
+		return nil, parseErr
+	} else if ok {
+		if quality < 0 || quality > 100 {
+			return nil, errors.New("quality must be between 0 and 100")
+		}
+		args = append(args, "--quality", strconv.Itoa(quality))
+	}
+	response, _, err := server.runner.runScreenshotAction(args)
+	return response, err
+}
+
 func (server *mcpServer) runCDPTool(arguments map[string]any) (any, error) {
 	method, err := requiredStringArg(arguments, "method")
 	if err != nil {
@@ -673,6 +928,29 @@ func mcpToolResult(output any) (map[string]any, error) {
 	}, nil
 }
 
+func mcpScreenshotResult(output any, format string) (map[string]any, error) {
+	if format == "" {
+		format = "png"
+	}
+	response, _ := output.(map[string]any)
+	result, _ := response["result"].(map[string]any)
+	data, _ := result["data"].(string)
+	if data == "" {
+		return nil, errors.New("screenshot response did not include image data")
+	}
+	return map[string]any{
+		"content": []map[string]any{{
+			"type":     "image",
+			"data":     data,
+			"mimeType": "image/" + format,
+		}},
+		"structuredContent": map[string]any{
+			"format": format,
+		},
+		"isError": false,
+	}, nil
+}
+
 func mcpToolErrorResult(message string) map[string]any {
 	return map[string]any{
 		"content": []map[string]any{
@@ -689,6 +967,14 @@ func requiredStringArg(arguments map[string]any, name string) (string, error) {
 	value := optionalStringArg(arguments, name)
 	if value == "" {
 		return "", fmt.Errorf("%s is required", name)
+	}
+	return value, nil
+}
+
+func requiredStringValueArg(arguments map[string]any, name string) (string, error) {
+	value, ok := arguments[name].(string)
+	if !ok {
+		return "", fmt.Errorf("%s is required and must be a string", name)
 	}
 	return value, nil
 }

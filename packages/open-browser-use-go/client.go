@@ -101,9 +101,17 @@ func (c *Client) Request(method string, params Params) (any, error) {
 	}
 	c.nextID++
 	requestID := c.nextID
+	operationID := ""
+	if provided, ok := params["operation_id"].(string); ok {
+		operationID = provided
+	}
+	if operationID == "" {
+		operationID = fmt.Sprintf("op-go-%d-%d", time.Now().UnixNano(), requestID)
+	}
 	merged := Params{
-		"session_id": c.options.SessionID,
-		"turn_id":    c.options.TurnID,
+		"session_id":   c.options.SessionID,
+		"turn_id":      c.options.TurnID,
+		"operation_id": operationID,
 	}
 	for key, value := range params {
 		merged[key] = value
@@ -123,6 +131,11 @@ func (c *Client) Request(method string, params Params) (any, error) {
 	for {
 		var response rpcMessage
 		if err := wire.ReadJSON(c.conn, &response); err != nil {
+			_ = c.conn.Close()
+			c.conn = nil
+			if netError, ok := err.(net.Error); ok && netError.Timeout() {
+				return nil, fmt.Errorf("%w (operation_id=%s, outcome=unknown; call ReconcileOperation)", err, operationID)
+			}
 			return nil, err
 		}
 		if response.ID != nil && idMatches(response.ID, requestID) {
@@ -141,7 +154,7 @@ func (c *Client) Request(method string, params Params) (any, error) {
 			})
 			continue
 		}
-		return nil, fmt.Errorf("unexpected response id: %v", response.ID)
+		// Ignore stale responses and continue until this request's exact id.
 	}
 }
 
@@ -167,6 +180,22 @@ func (c *Client) GetUserHistory(params Params) (any, error) {
 
 func (c *Client) ClaimUserTab(tabID int) (any, error) {
 	return c.Request("claimUserTab", Params{"tabId": tabID})
+}
+
+func (c *Client) ClaimStatus(tabID int) (any, error) {
+	return c.Request("claimStatus", Params{"tabId": tabID})
+}
+
+func (c *Client) CloseTab(tabID int) (any, error) {
+	return c.Request("closeTab", Params{"tabId": tabID})
+}
+
+func (c *Client) FocusState() (any, error) {
+	return c.Request("focusState", nil)
+}
+
+func (c *Client) ReconcileOperation(operationID string) (any, error) {
+	return c.Request("reconcileOperation", Params{"operation_id": operationID})
 }
 
 func (c *Client) FinalizeTabs(keep []Params) (any, error) {

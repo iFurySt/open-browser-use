@@ -22,6 +22,7 @@ type PendingRequest = {
   resolve: (value: JsonValue) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
+  operationId: string;
 };
 
 export type OpenBrowserUseNotification = {
@@ -101,9 +102,15 @@ export class OpenBrowserUseClient {
       throw new Error("Open Browser Use socket is not connected");
     }
     const id = String(this.#nextId++);
+    const suppliedOperationId = params.operation_id;
+    const operationId =
+      typeof suppliedOperationId === "string" && suppliedOperationId
+        ? suppliedOperationId
+        : `op-js-${process.pid}-${Date.now()}-${id}`;
     const mergedParams = {
       session_id: this.sessionId,
       turn_id: this.turnId,
+      operation_id: operationId,
       ...params
     };
     const message = {
@@ -116,9 +123,13 @@ export class OpenBrowserUseClient {
     const promise = new Promise<JsonValue>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.#pending.delete(id);
-        reject(new Error(`Open Browser Use request timed out: ${method}`));
+        reject(
+          new Error(
+            `Open Browser Use request timed out: ${method} (operation_id=${operationId}, outcome=unknown; call reconcileOperation)`
+          )
+        );
       }, this.timeoutMs);
-      this.#pending.set(id, { resolve, reject, timeout });
+      this.#pending.set(id, { resolve, reject, timeout, operationId });
     });
     socket.write(payload);
     return await promise;
@@ -146,6 +157,22 @@ export class OpenBrowserUseClient {
 
   claimUserTab(tabId: number): Promise<JsonValue> {
     return this.request("claimUserTab", { tabId });
+  }
+
+  claimStatus(tabId: number): Promise<JsonValue> {
+    return this.request("claimStatus", { tabId });
+  }
+
+  closeTab(tabId: number): Promise<JsonValue> {
+    return this.request("closeTab", { tabId });
+  }
+
+  focusState(): Promise<JsonValue> {
+    return this.request("focusState");
+  }
+
+  reconcileOperation(operationId: string): Promise<JsonValue> {
+    return this.request("reconcileOperation", { operation_id: operationId });
   }
 
   finalizeTabs(keep: JsonValue[]): Promise<JsonValue> {

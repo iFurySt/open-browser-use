@@ -30,6 +30,7 @@ class OpenBrowserUseClientTest(unittest.TestCase):
                     (length,) = struct.unpack("=I", header)
                     payload = conn.recv(length)
                     request = json.loads(payload)
+                    self.assertRegex(request["params"]["operation_id"], r"^op-python-")
                     response = {
                         "jsonrpc": "2.0",
                         "id": request["id"],
