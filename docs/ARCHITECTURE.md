@@ -187,9 +187,19 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
 - MV3 extension core handlers：`getInfo`、`createTab`、`getTabs`、
   `getUserTabs`、`getUserHistory`、`claimUserTab`、`finalizeTabs`、
   `nameSession`、`attach`、`detach`、`executeCdp`、`moveMouse`、
+  `webmcp_list_tools`、`webmcp_invoke_tool`、
   `waitForFileChooser`、`setFileChooserFiles`、`waitForDownload`、
   `downloadPath`、`readClipboardText`、`writeClipboardText`、
   `readClipboard`、`writeClipboard`、`turnEnded`。
+- WebMCP 使用两层 content script：MAIN world 优先使用浏览器原生
+  `document.modelContext`；如果浏览器没有提供该 API，则在页面代码运行前安装
+  一个最小 page-facing shim，覆盖 `registerTool`、`getTools`、`executeTool`、
+  `AbortSignal` 注销和 `toolchange`。ISOLATED world 只负责 extension messaging 与
+  页面消息转发。扩展在 `document_start` 动态注册两层脚本，并在处理已打开 tab
+  时 lazy inject 作为补偿。`webmcp_list_tools` 为当前工具快照生成 opaque
+  `registration_id`；`webmcp_invoke_tool` 必须带回同一个 id 和 tool name，页面
+  `toolchange`、重新 list 或 navigation 会让旧快照失效。该能力继续复用现有
+  session/tab ownership，不新增独立 browser routing layer。
 - Session state persists the Chrome tab group id, tab origins, group title,
   deliverable group id, and logical active tab id in `chrome.storage.local` so
   MV3 service worker restarts can recover session tab listing semantics.

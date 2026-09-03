@@ -35,6 +35,8 @@ const requiredFiles = [
   "manifest.json",
   "background.js",
   "content-cursor.js",
+  "content-webmcp-main.js",
+  "content-webmcp-bridge.js",
   "icons/icon-16.png",
   "icons/icon-32.png",
   "icons/icon-48.png",
@@ -96,6 +98,8 @@ NODE
 
 node --check "${extension_dir}/background.js" >&2
 node --check "${extension_dir}/content-cursor.js" >&2
+node --check "${extension_dir}/content-webmcp-main.js" >&2
+node --check "${extension_dir}/content-webmcp-bridge.js" >&2
 node --check "${extension_dir}/popup.js" >&2
 
 rm -rf "${dist_dir}"
@@ -110,6 +114,8 @@ done <<'EOF'
 manifest.json
 background.js
 content-cursor.js
+content-webmcp-main.js
+content-webmcp-bridge.js
 icons/icon-16.png
 icons/icon-32.png
 icons/icon-48.png
@@ -126,6 +132,8 @@ EOF
     manifest.json \
     background.js \
     content-cursor.js \
+    content-webmcp-main.js \
+    content-webmcp-bridge.js \
     icons/icon-16.png \
     icons/icon-32.png \
     icons/icon-48.png \
