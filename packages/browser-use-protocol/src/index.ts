@@ -11,6 +11,52 @@ export type JsonValue =
       [key: string]: JsonValue;
     };
 
+export const WEBMCP_LIST_TOOLS_METHOD = "webmcp_list_tools";
+export const WEBMCP_INVOKE_TOOL_METHOD = "webmcp_invoke_tool";
+
+export type BrowserSessionParams = {
+  session_id: string;
+  turn_id: string;
+};
+
+export type WebMcpToolAnnotations = {
+  readOnlyHint?: boolean;
+  untrustedContentHint?: boolean;
+};
+
+export type WebMcpToolDescriptor = {
+  name: string;
+  registration_id: string;
+  title?: string;
+  description?: string;
+  input_schema: JsonValue;
+  annotations?: WebMcpToolAnnotations;
+  origin?: string;
+  pageUrl?: string;
+};
+
+export type WebMcpListToolsParams = BrowserSessionParams & {
+  tabId: number;
+};
+
+export type WebMcpListToolsResult = {
+  tools: WebMcpToolDescriptor[];
+};
+
+export type WebMcpInvokeToolParams = BrowserSessionParams & {
+  tabId: number;
+  tool_name: string;
+  tool_description?: string;
+  tool_title?: string;
+  registration_id: string;
+  input: JsonValue;
+  timeout_ms?: number;
+};
+
+export type WebMcpInvokeToolResult = {
+  result: JsonValue;
+};
+
 export type JsonRpcRequest = {
   jsonrpc?: "2.0";
   id?: number | string | null;
