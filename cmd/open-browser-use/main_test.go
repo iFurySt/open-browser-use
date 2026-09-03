@@ -1160,6 +1160,66 @@ func TestInvokeRemovesStaleActiveSocketRecord(t *testing.T) {
 	}
 }
 
+func TestInvokeSkipsNotificationsBeforeResponse(t *testing.T) {
+	socketDir, err := os.MkdirTemp("/tmp", "obu-notification-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	socketPath := filepath.Join(socketDir, "obu.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+
+		var request map[string]any
+		if err := wire.ReadJSON(conn, &request); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := wire.WriteJSON(conn, map[string]any{
+			"jsonrpc": "2.0",
+			"method":  "heartbeat",
+			"params":  map[string]any{"at": "2026-09-03T08:00:00Z"},
+		}); err != nil {
+			serverDone <- err
+			return
+		}
+		if err := wire.WriteJSON(conn, map[string]any{
+			"jsonrpc": "2.0",
+			"id":      request["id"],
+			"result":  map[string]any{"version": version},
+		}); err != nil {
+			serverDone <- err
+			return
+		}
+		serverDone <- nil
+	}()
+
+	response, invokeErr := invoke(socketPath, "", "getInfo", map[string]any{}, time.Second)
+	serverErr := <-serverDone
+	if serverErr != nil {
+		t.Fatal(serverErr)
+	}
+	if invokeErr != nil {
+		t.Fatal(invokeErr)
+	}
+	result, _ := response["result"].(map[string]any)
+	if result["version"] != version {
+		t.Fatalf("expected response after notification, got %#v", response)
+	}
+}
+
 func TestInvokeScansSocketDirWhenActiveRecordMissing(t *testing.T) {
 	socketDir, err := os.MkdirTemp("/tmp", "obu-socket-test-")
 	if err != nil {

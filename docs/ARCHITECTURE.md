@@ -148,6 +148,8 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `*.sock` 并连接最新可用 socket，连接成功后修复 active registry；如果
   registry 指向不可连接的旧 socket，CLI 会移除 stale registry entry 和对应
   stale socket file，再尝试目录扫描，避免后续命令持续命中同一个失效 socket。
+  CLI 和复用同一 runner 的 MCP tools 会按 JSON-RPC request id 等待对应响应，
+  跳过其间插入的 `heartbeat`、CDP event 等 notification，避免把通知误当成命令结果。
 - `open-browser-use run`：line-oriented action plan 入口，支持一次执行多条
   CLI action，保留同一个 session/turn，并让 `open-tab`/`claim-tab` 设置默认
   tab，供后续 `wait-load`、`page-info`、`navigate`、`cdp` 等 tab-scoped action
