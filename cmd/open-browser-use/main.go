@@ -2313,20 +2313,31 @@ func invokeWithProfile(socketPath string, socketDir string, browser string, prof
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	applySessionDefaults(params, defaultCLISessionID)
+	requestID := "cli-1"
 	request := map[string]any{
 		"jsonrpc": "2.0",
-		"id":      "cli-1",
+		"id":      requestID,
 		"method":  method,
 		"params":  params,
 	}
 	if err := wire.WriteJSON(conn, request); err != nil {
 		return nil, err
 	}
-	var response map[string]any
-	if err := wire.ReadJSON(conn, &response); err != nil {
-		return nil, err
+	return readResponseForID(conn, requestID)
+}
+
+func readResponseForID(conn net.Conn, requestID string) (map[string]any, error) {
+	for {
+		var response map[string]any
+		if err := wire.ReadJSON(conn, &response); err != nil {
+			return nil, err
+		}
+		if responseID, ok := response["id"].(string); ok && responseID == requestID {
+			return response, nil
+		}
+		// JSON-RPC notifications and unrelated responses may be interleaved with
+		// the response for this request. Keep reading until its id arrives.
 	}
-	return response, nil
 }
 
 func applySessionDefaults(params map[string]any, sessionID string) {
@@ -2457,16 +2468,7 @@ func getInfoOverConn(conn net.Conn, timeout time.Duration) (map[string]any, erro
 	if err := wire.WriteJSON(conn, req); err != nil {
 		return nil, err
 	}
-	for {
-		var resp map[string]any
-		if err := wire.ReadJSON(conn, &resp); err != nil {
-			return nil, err
-		}
-		if id, ok := resp["id"].(string); ok && id == wantID {
-			return resp, nil
-		}
-		// skip notifications / stale responses while waiting for our id
-	}
+	return readResponseForID(conn, wantID)
 }
 
 func connectedProfileFromInfo(socketPath string, payload map[string]any) connectedProfileInfo {
