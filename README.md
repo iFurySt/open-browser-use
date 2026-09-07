@@ -128,15 +128,14 @@ navigation, CDP, action plans, and cleanup.
 
 #### History Search
 
-The extension accepts multiple history search terms through `getUserHistory`:
-`{"queries":["design guide","api reference"],"limit":20}`. Use an SDK history
-wrapper or the CLI/MCP `call` method. The existing `query` input still works.
-Results are ordered by newest visit, with one entry per URL. Without `from`,
-the search includes older retained history instead of only the last 24 hours.
-
-See the [history contract and extension capability review](./docs/wiki/browser-client/runtime/chatgpt-extension-2026-09.md)
-for examples, validation, and remaining capability gaps. Load an extension
-build that includes this change before using `queries`.
+`getUserHistory` accepts multiple search terms via `queries`:
+`{"queries":["design guide","api reference"],"limit":20}`. The existing
+`query` input still works for a single term. Results keep the `{ url,
+title?, dateVisited }` shape, are ordered by newest visit with one entry
+per URL, and `limit` applies to the merged list. Without `from`, the search
+covers all retained history. Invalid inputs fail before Chrome is queried.
+Use an SDK history wrapper or the CLI/MCP `call` method for multiple terms;
+the dedicated `history` command takes a single `query`.
 
 ## License
 
