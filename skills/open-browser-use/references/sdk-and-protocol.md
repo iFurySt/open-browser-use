@@ -250,6 +250,25 @@ open-browser-use call --session-id "$OBU_SESSION_ID" --method getInfo --params '
 open-browser-use call --session-id "$OBU_SESSION_ID" --method executeCdp --params '{"target":{"tabId":123},"method":"Runtime.evaluate","commandParams":{"expression":"document.title"}}'
 ```
 
+### History search
+
+Use `queries` to cover several search terms in one `getUserHistory` request
+instead of calling once per term. The existing `query` input still works
+for a single term:
+
+```sh
+open-browser-use call \
+  --session-id "$OBU_SESSION_ID" \
+  --method getUserHistory \
+  --params '{"queries":["design guide","api reference"],"limit":20}'
+```
+
+Results keep the `{ url, title?, dateVisited }` shape, are ordered by newest
+visit with one entry per URL, and `limit` applies to the merged list.
+Without `from`, the search covers all retained history. Invalid inputs fail
+before Chrome is queried. The dedicated `history` CLI/MCP command takes a
+single `query`; use `call` or an SDK history wrapper for multiple terms.
+
 ### WebMCP page tools
 
 The Chrome route can discover and invoke tools registered by the current
