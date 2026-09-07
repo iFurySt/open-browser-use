@@ -20,6 +20,9 @@ client runtime.
 - `runtime/chrome-extension-architecture.md`: non-IAB Chrome extension backend
   path, native host expectations, tab ownership, and local installation
   observations.
+- `runtime/chatgpt-extension-2026-09.md`: installed ChatGPT extension
+  `1.26.901.11451`, capability gaps, source anchors, and the new history search
+  contract in Open Browser Use.
 - `runtime/iab-architecture.md`: Codex in-app browser routing, Electron
   `webview`/`webContents`, logical tab mapping, and storage partitioning.
 - `runtime/transport-rpc.md`: native pipe framing, JSON-RPC, and backend API.

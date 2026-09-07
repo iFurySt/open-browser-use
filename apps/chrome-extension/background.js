@@ -371,29 +371,55 @@ class BrowserBackend {
 
   async getUserHistory(params) {
     await this.requireSession(params);
-    const query = typeof params.query === "string" ? params.query : "";
-    const maxResults =
-      Number.isInteger(params.limit) && params.limit > 0 ? params.limit : 100;
-    const search = { text: query, maxResults };
-    if (typeof params.from === "string") {
-      search.startTime = parseDate(params.from, "from");
+    if (params.queries == null && params.query != null && typeof params.query !== "string") {
+      throw new Error("getUserHistory requires query to be a string");
     }
-    if (typeof params.to === "string") {
-      search.endTime = parseDate(params.to, "to");
+    const queries = params.queries ?? [params.query ?? ""];
+    if (!Array.isArray(queries) || queries.length === 0) {
+      throw new Error("getUserHistory requires queries to be a non-empty array of strings");
     }
-    const results = await chrome.history.search(search);
-    return results.flatMap((item) => {
-      if (typeof item.url !== "string" || typeof item.lastVisitTime !== "number") {
-        return [];
+    for (const query of queries) {
+      if (typeof query !== "string") {
+        throw new Error("getUserHistory requires queries to be a non-empty array of strings");
       }
-      return [
-        {
-          url: item.url,
-          ...(item.title ? { title: item.title } : {}),
-          dateVisited: new Date(item.lastVisitTime).toISOString()
-        }
-      ];
-    });
+    }
+    const maxResults = optionalPositiveInteger(params.limit ?? undefined, 100, "getUserHistory limit");
+    // Chrome searches only the last 24 hours when startTime is omitted.
+    const search = { maxResults, startTime: 0 };
+    for (const [field, key] of [["from", "startTime"], ["to", "endTime"]]) {
+      if (params[field] == null) continue;
+      if (typeof params[field] !== "string") {
+        throw new Error(`getUserHistory requires ${field} to be a valid date`);
+      }
+      search[key] = parseDate(params[field], field);
+    }
+    if (search.endTime !== undefined && search.endTime < search.startTime) {
+      throw new Error("getUserHistory requires to >= from");
+    }
+    // ponytail: batches stay in memory; add a queue if bulk searches become common.
+    const batches = await Promise.all(
+      [...new Set(queries)].map((text) => chrome.history.search({ ...search, text }))
+    );
+    const seenUrls = new Set();
+    return batches
+      .flat()
+      .filter((item) =>
+        typeof item?.url === "string" &&
+        typeof item.lastVisitTime === "number" &&
+        Number.isFinite(new Date(item.lastVisitTime).getTime())
+      )
+      .sort((left, right) => right.lastVisitTime - left.lastVisitTime)
+      .filter(({ url }) => {
+        if (seenUrls.has(url)) return false;
+        seenUrls.add(url);
+        return true;
+      })
+      .slice(0, maxResults)
+      .map((item) => ({
+        url: item.url,
+        ...(item.title ? { title: item.title } : {}),
+        dateVisited: new Date(item.lastVisitTime).toISOString()
+      }));
   }
 
   async claimUserTab(params) {
