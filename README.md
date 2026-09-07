@@ -126,17 +126,6 @@ args = ["mcp"]
 The server exposes browser tools for tab listing, opening, claiming,
 navigation, CDP, action plans, and cleanup.
 
-#### History Search
-
-`getUserHistory` accepts multiple search terms via `queries`:
-`{"queries":["design guide","api reference"],"limit":20}`. The existing
-`query` input still works for a single term. Results keep the `{ url,
-title?, dateVisited }` shape, are ordered by newest visit with one entry
-per URL, and `limit` applies to the merged list. Without `from`, the search
-covers all retained history. Invalid inputs fail before Chrome is queried.
-Use an SDK history wrapper or the CLI/MCP `call` method for multiple terms;
-the dedicated `history` command takes a single `query`.
-
 ## License
 
 [MIT](./LICENSE)
