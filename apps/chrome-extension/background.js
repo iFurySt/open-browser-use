@@ -369,6 +369,10 @@ class BrowserBackend {
     return tabs.map((tab) => toUserTab(tab, groupTitles));
   }
 
+  /**
+   * Search retained history for one or more terms.
+   * Merges matches by URL (newest visit wins) and applies a single limit.
+   */
   async getUserHistory(params) {
     await this.requireSession(params);
     if (params.queries == null && params.query != null && typeof params.query !== "string") {
@@ -396,7 +400,6 @@ class BrowserBackend {
     if (search.endTime !== undefined && search.endTime < search.startTime) {
       throw new Error("getUserHistory requires to >= from");
     }
-    // ponytail: batches stay in memory; add a queue if bulk searches become common.
     const batches = await Promise.all(
       [...new Set(queries)].map((text) => chrome.history.search({ ...search, text }))
     );
