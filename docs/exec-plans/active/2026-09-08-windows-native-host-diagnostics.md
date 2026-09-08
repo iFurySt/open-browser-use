@@ -23,7 +23,7 @@ launch/stop Chrome or the host during diagnosis.
 - [x] Test missing/invalid manifests, origin mismatch, shadowing, and disabled
       user-level hosts locally; add real registry tests for Windows CI.
 - [x] Run `make ci` and local PowerShell fixture tests.
-- [ ] Publish a draft PR and verify Windows CI registry integration.
+- [x] Publish draft PR #25 and verify Windows CI registry integration.
 - [ ] Verify the issue reporter's Chrome environment and implement any confirmed
       runtime/installer correction before marking #20 fixed.
 
@@ -32,3 +32,9 @@ launch/stop Chrome or the host during diagnosis.
 - https://github.com/iFurySt/open-browser-use/issues/20
 - https://github.com/chromium/chromium/blob/main/chrome/browser/extensions/api/messaging/launch_context_win.cc
 - https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging
+
+## Validation result
+
+Windows CI passed the diagnostic suite, including real 32/64-view Unicode
+registry reads. The original Chrome 151 failure remains unverified; keep this
+plan active until the affected environment supplies reproduction evidence.

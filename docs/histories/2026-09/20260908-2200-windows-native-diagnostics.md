@@ -26,7 +26,7 @@
 ### Validation and remaining work
 
 - Full `make ci` passed with Node 24, frozen-lockfile dependencies, and
-  `TMPDIR=/tmp`. PowerShell 7.6.5 fixture tests passed locally; real registry integration is gated on
-  Windows and runs in the added CI job.
+  `TMPDIR=/tmp`. PowerShell 7.6.5 fixture tests passed locally; the added Windows CI job also passed, including real registry
+  integration in both views.
 - This is diagnostic progress, not a confirmed resolution of #20. The original
   Windows/Chrome failure still needs reproduction and effective-policy evidence.
