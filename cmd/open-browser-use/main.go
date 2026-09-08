@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ifuryst/open-browser-use/internal/host"
@@ -2393,20 +2394,23 @@ func dialBrowserSocket(socketPath string, socketDir string, timeout time.Duratio
 		if dialErr == nil {
 			return conn, nil
 		}
+		if !isStaleSocketError(dialErr) {
+			return nil, fmt.Errorf("connect to active socket %q: %w", record.SocketPath, dialErr)
+		}
 		_ = host.RemoveActiveSocketRecord(socketDir, record.SocketPath)
 		removeSocketPathIfInDir(socketDir, record.SocketPath)
 		conn, scanErr := scanSocketDir(socketDir, record.SocketPath, timeout)
 		if scanErr == nil {
 			return conn, nil
 		}
-		return nil, fmt.Errorf("active socket registry points to unavailable socket %q; removed stale registry entry; no connectable socket found by scanning: %w", record.SocketPath, dialErr)
+		return nil, fmt.Errorf("active socket registry points to unavailable socket %q; removed stale registry entry; no connectable socket found by scanning: %w", record.SocketPath, errors.Join(dialErr, scanErr))
 	}
 
 	conn, scanErr := scanSocketDir(socketDir, "", timeout)
 	if scanErr == nil {
 		return conn, nil
 	}
-	return nil, fmt.Errorf("socket not provided and active socket registry is unavailable; no connectable socket found by scanning: %w", err)
+	return nil, fmt.Errorf("socket not provided and active socket registry is unavailable; no connectable socket found by scanning: %w", errors.Join(err, scanErr))
 }
 
 type socketCandidate struct {
@@ -2551,9 +2555,14 @@ func pickSocketForProfile(socketDir string, browserSelector string, profileSelec
 		probeTimeout = 800 * time.Millisecond
 	}
 	var seen []connectedProfileInfo
+	var dialErrors error
 	for _, candidate := range candidates {
 		conn, err := net.DialTimeout("unix", candidate.path, probeTimeout)
 		if err != nil {
+			if !isStaleSocketError(err) {
+				dialErrors = errors.Join(dialErrors, fmt.Errorf("connect to socket %q: %w", candidate.path, err))
+				continue
+			}
 			removeSocketPathIfInDir(socketDir, candidate.path)
 			continue
 		}
@@ -2569,6 +2578,9 @@ func pickSocketForProfile(socketDir string, browserSelector string, profileSelec
 			return conn, info, seen, nil
 		}
 		_ = conn.Close()
+	}
+	if dialErrors != nil {
+		return nil, connectedProfileInfo{}, seen, dialErrors
 	}
 	return nil, connectedProfileInfo{}, seen, fmt.Errorf("no running Open Browser Use host matched --browser %q --profile %q; %s", browserSelector, profileSelector, profileMatchHint(seen))
 }
@@ -2637,6 +2649,7 @@ func scanSocketDir(socketDir string, skipPath string, timeout time.Duration) (ne
 		probeTimeout = 500 * time.Millisecond
 	}
 	var lastErr error
+	var dialErrors error
 	for _, candidate := range candidates {
 		if candidate.path == skipPath {
 			continue
@@ -2647,8 +2660,15 @@ func scanSocketDir(socketDir string, skipPath string, timeout time.Duration) (ne
 			cleanupStaleSocketCandidates(dir, candidates, candidate.path, probeTimeout)
 			return conn, nil
 		}
+		if !isStaleSocketError(err) {
+			dialErrors = errors.Join(dialErrors, fmt.Errorf("connect to socket %q: %w", candidate.path, err))
+			continue
+		}
 		removeSocketPathIfInDir(dir, candidate.path)
 		lastErr = err
+	}
+	if dialErrors != nil {
+		return nil, dialErrors
 	}
 	if lastErr == nil {
 		return nil, fmt.Errorf("no socket files in %q after filtering", dir)
@@ -2670,7 +2690,9 @@ func cleanupStaleSocketCandidates(socketDir string, candidates []socketCandidate
 			_ = conn.Close()
 			continue
 		}
-		removeSocketPathIfInDir(socketDir, candidate.path)
+		if isStaleSocketError(err) {
+			removeSocketPathIfInDir(socketDir, candidate.path)
+		}
 	}
 }
 
@@ -2689,6 +2711,11 @@ func repairActiveSocketRecord(socketDir string, candidate socketCandidate) {
 		return
 	}
 	_ = os.Chmod(path, 0o600)
+}
+
+// Permission errors and timeouts do not prove that the listener is gone.
+func isStaleSocketError(err error) bool {
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func removeSocketPathIfInDir(socketDir string, socketPath string) {
