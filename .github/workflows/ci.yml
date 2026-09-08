@@ -32,3 +32,13 @@ jobs:
 
       - name: Run base CI checks
         run: ./scripts/ci.sh
+
+  windows-native-diagnostics:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Test native host diagnostics and Windows registry reads
+        shell: pwsh
+        run: ./scripts/diagnose-windows-native-host.test.ps1
