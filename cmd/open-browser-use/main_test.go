@@ -1738,3 +1738,59 @@ func TestIsStaleSocketError(t *testing.T) {
 		})
 	}
 }
+
+// A deadline that has already expired deterministically fails before connecting,
+// even though the listener is live. This exercises the cleanup callers without
+// requiring a particular sandbox, user ID, or OS permission implementation.
+func TestSocketDiscoveryPreservesLiveSocketOnTimeout(t *testing.T) {
+	for _, route := range []string{"active registry", "profile selection", "directory scan", "cleanup"} {
+		t.Run(route, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "live.sock")
+			listener, err := net.Listen("unix", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			if err := host.WriteActiveSocketRecord(dir, path); err != nil {
+				t.Fatal(err)
+			}
+			registryPath := host.ActiveSocketRecordPath(dir)
+			before, err := os.ReadFile(registryPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch route {
+			case "active registry":
+				_, err = dialBrowserSocket("", dir, -time.Second)
+			case "profile selection":
+				_, _, _, err = pickSocketForProfile(dir, "chrome", "Default", -time.Second)
+			case "directory scan":
+				_, err = scanSocketDir(dir, "", -time.Second)
+			case "cleanup":
+				cleanupStaleSocketCandidates(dir, []socketCandidate{{path: path}}, "", -time.Second)
+			}
+			if route != "cleanup" {
+				var timeout net.Error
+				if !errors.As(err, &timeout) || !timeout.Timeout() {
+					t.Fatalf("expected original timeout to remain discoverable, got %v", err)
+				}
+			}
+			after, err := os.ReadFile(registryPath)
+			if err != nil {
+				t.Fatalf("registry was removed: %v", err)
+			}
+			if string(after) != string(before) {
+				t.Fatal("registry was changed")
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("live socket was removed: %v", err)
+			}
+			conn, err := net.DialTimeout("unix", path, time.Second)
+			if err != nil {
+				t.Fatalf("live socket no longer connects: %v", err)
+			}
+			conn.Close()
+		})
+	}
+}
