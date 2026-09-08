@@ -47,6 +47,27 @@ open-browser-use setup
 如果 Chrome Web Store 暂时不可用，可以运行 `open-browser-use setup beta`
 准备带固定 key 的 release ZIP，再到 `chrome://extensions/` 手动安装。
 
+### 配置 Zen Browser（实验性）
+
+从匹配版本的 [GitHub Release](https://github.com/iFurySt/open-browser-use/releases)
+下载 `open-browser-use-zen-extension-<version>.xpi`。在 Zen 打开
+`about:debugging#/runtime/this-firefox`，选择“临时载入附加组件”并选中 XPI，
+临时插件会在 Zen 重启后被移除，需重新载入；当前 XPI 是开发安装方式，
+不是可持久安装的签名发行版。然后注册 Firefox native messaging host：
+
+```bash
+open-browser-use install-manifest --browser zen
+open-browser-use profiles --connected
+open-browser-use info --browser zen
+```
+
+打开插件 popup，点击 **Enable page interaction** 授予全局 `userScripts` 权限，
+当前普通网页会重新加载一次。重新载入临时插件后请检查权限状态，必要时再次授权。
+
+Zen 基于 Firefox，不提供 Chrome extension debugger API。当前支持 tab、history、
+navigation、page info、JavaScript evaluation、download、clipboard、cursor 和
+session cleanup；不支持任意 Chrome-only CDP method 与本地 file chooser path 注入。
+
 ### 使用
 
 #### SDK

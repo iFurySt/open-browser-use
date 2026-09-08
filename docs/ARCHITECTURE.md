@@ -3,9 +3,10 @@
 这个仓库当前目标是实现 Open Browser Use：一套开源 Browser Use 风格的
 Chrome 浏览器自动化基础设施。
 
-当前 `main` 分支只保留 Chrome route：MV3 Chrome extension + Go native
-messaging host + SDK。这条路线用于接管用户真实 Chrome profile 中的 tabs、
-debugger、history 和 tab groups。
+当前 `main` 分支包含 Chrome route 和 Zen/Firefox compatibility route。两者共享
+Go native messaging host、SDK 与主要 extension runtime；Chrome route 使用
+`chrome.debugger` 和 tab groups，Zen route 通过 Firefox WebExtension API 提供
+tabs、history、session 和核心 navigation/evaluation 兼容能力。
 
 已完成的 Chrome route 执行计划：
 
@@ -20,6 +21,8 @@ debugger、history 和 tab groups。
 
 - `apps/chrome-extension/`：Open Browser Use MV3 Chrome extension，包含
   readable service worker、cursor content script 和 popup。
+- `apps/zen-extension/`：Zen/Firefox MV3 manifest 和 Firefox compatibility
+  adapter；打包时复用 Chrome extension 的 background、cursor、popup 与图标。
 - `cmd/open-browser-use/`：Go native messaging host 和 CLI 主入口。二进制
   正式名是 `open-browser-use`，可通过同路径 symlink 或 shell alias 暴露为
   `obu`。
@@ -168,11 +171,12 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `finalize-tabs`、`name-session`、`cdp`、`move-mouse`、
   `wait-file-chooser`、`set-file-chooser-files`、`turn-ended`、`profiles`。
 - Multi-browser / multi-profile 支持：`open-browser-use profiles` 扫描 Chrome
-  Stable、Chrome Beta 和 BitBrowser user-data roots，在每个 profile 目录中
-  通过 CRX 与 unpacked 两条路径找到已经装好插件的 profile，附带 browser id、
+  Stable、Chrome Beta、Zen Browser 和 BitBrowser user-data roots。Chromium
+  profile 通过 CRX/unpacked 路径检测，Zen profile 通过 Firefox
+  `profiles.ini`/`extensions.json` 检测；结果附带 browser id、
   browser display name、profile directory 和展示名（来自
   `Local State.profile.info_cache`）。所有面向用户的命令支持
-  `--browser <chrome|chrome-beta|bitbrowser|displayName|instance>` 和
+  `--browser <chrome|chrome-beta|zen|bitbrowser|displayName|instance>` 和
   `--profile <directory|displayName>`：CLI 枚举 `socket-dir` 下的 `.sock`
   文件，对每个连通的 socket 调用 `getInfo`，把
   `metadata.extensionInstanceId` 反查到 browser/profile（grep 每个支持 browser
@@ -180,8 +184,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   选出匹配 socket。`obu mcp --browser ... --profile ...` 在 MCP server 启动时锁定
   selector，每次工具调用复用同一个解析结果。selector 不匹配时 CLI 列出当前已连通
   target 列表，提示用户打开对应 browser/profile。Windows 当前覆盖 Chrome
-  Stable 和 Chrome Beta 的 `%LOCALAPPDATA%\Google\...\User Data` roots；BitBrowser
-  root 仍只在 macOS 路径中自动发现。未显式选择时仍保留
+  Stable、Chrome Beta 和 Zen 的 profile roots；BitBrowser root 仍只在 macOS
+  路径中自动发现。Zen Linux 同时覆盖 system package 的 `~/.config/zen`、
+  tarball 的 `~/.zen` 和 Flatpak profile root。未显式选择时仍保留
   `active.json` 快速路径；`active.json` 缺失或失效时，CLI 会扫描 socket 目录并
   修复 registry，因此不需要重装扩展。
 - MV3 extension core handlers：`getInfo`、`createTab`、`getTabs`、
@@ -200,6 +205,24 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `registration_id`；`webmcp_invoke_tool` 必须带回同一个 id 和 tool name，页面
   `toolchange`、重新 list 或 navigation 会让旧快照失效。该能力继续复用现有
   session/tab ownership，不新增独立 browser routing layer。
+- Zen/Firefox route 使用稳定 Gecko id `open-browser-use@ifuryst.com`，native
+  manifest 使用 `allowed_extensions` 并安装到 Mozilla NativeMessagingHosts
+  位置。Windows Firefox manifest 单独写入
+  `%LOCALAPPDATA%\OpenBrowserUse\NativeMessagingHosts\firefox\com.ifuryst.open_browser_use.extension.json`，
+  由 `HKCU\Software\Mozilla\NativeMessagingHosts\com.ifuryst.open_browser_use.extension`
+  指向它，避免覆盖 Chrome 原有文件。Firefox 不实现 Chrome WebExtension debugger API，
+  因此 adapter 只兼容
+  `Page.navigate`、`Page.reload`、`Page.close`、`Runtime.evaluate`、
+  `Target.getTargets` 和基础 enable/version 调用；其他 CDP method 返回明确的
+  unsupported error，file chooser 本地路径注入也不可用。`Runtime.evaluate`
+  使用 Firefox MV3 user-script API 在隔离的 `USER_SCRIPT` world 中运行：
+  Firefox 136–152 通过已注册 bridge 执行，Firefox 153+ 可直接使用
+  `userScripts.execute`。这允许 DOM 读取和表单交互而不依赖网站 CSP；
+  `userScripts` 是一次性、全局的 optional-only permission，由用户在 popup 中
+  明确授予。当前 XPI 通过临时插件方式载入，重启浏览器后需重新载入并检查权限。
+  无 tab group API 时，通过持久化的 `tabOrigins` 独占归属标签页；
+  ownership 检查和预留在 storage await 前同步完成，重复 claim 保留原始 origin。
+
 - Session state persists the Chrome tab group id, tab origins, group title,
   deliverable group id, and logical active tab id in `chrome.storage.local` so
   MV3 service worker restarts can recover session tab listing semantics.

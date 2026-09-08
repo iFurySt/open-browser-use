@@ -4,7 +4,7 @@ Read this reference when the task requires multi-step automation, integration in
 
 ## Connection Model
 
-The Chrome extension starts the native host through Chrome Native Messaging. The native host exposes a local socket and writes the active socket registry so the CLI and SDKs can discover it.
+The Chrome or Zen extension starts the native host through browser Native Messaging. The native host exposes a local socket and writes the active socket registry so the CLI and SDKs can discover it.
 
 Default route:
 
@@ -13,8 +13,8 @@ agent runtime
   -> open-browser-use CLI, MCP server, or SDK
   -> active Open Browser Use socket
   -> native messaging host
-  -> Chrome extension
-  -> Chrome tabs / debugger / history / downloads
+  -> Chrome or Zen extension
+  -> browser tabs / debugger-compatible adapter / history / downloads
 ```
 
 Pass an explicit socket only when the runtime provides one:

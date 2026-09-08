@@ -4,7 +4,7 @@ Read this reference when the user asks to install, verify, repair, or explain Op
 
 ## Components
 
-- Chrome extension: the browser-side controller. Installing or enabling it may require the user to approve Chrome prompts.
+- Browser extension: the Chrome or Zen-side controller. Installing or enabling it may require user approval.
 - Native host and CLI: the local `open-browser-use` binary, also exposed as `obu` when installed from supported packages.
 - SDKs: JavaScript, Python, and Go clients that connect to the active native host socket.
 
@@ -48,6 +48,32 @@ For Chrome Beta, register that browser explicitly:
 open-browser-use setup --browser chrome-beta
 ```
 
+For Zen Browser, download the matching
+`open-browser-use-zen-extension-<version>.xpi` from GitHub Releases. Open
+`about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and
+select the XPI. This is an experimental, unsigned temporary installation: Zen
+removes the add-on at restart, so load it again before using the CLI. Register
+Firefox native messaging:
+
+```sh
+open-browser-use install-manifest --browser zen
+open-browser-use profiles --connected
+```
+
+Open the extension popup and enable Page Interaction (`userScripts`); the
+current ordinary tab reloads once. Check permission again after reloading the
+temporary add-on. On Windows the Firefox manifest uses a separate
+`NativeMessagingHosts/firefox/` directory; Chrome keeps its existing path. If an
+earlier experimental installation overwrote Chrome registration, rerun both
+`install-manifest --browser chrome` and `install-manifest --browser zen` with
+the fixed CLI.
+
+The Zen route supports the normal tab/history/session commands plus the core
+`Page.navigate`, `Page.reload`, `Page.close`, `Runtime.evaluate`, and
+`Target.getTargets` compatibility calls. Firefox does not implement Chrome's
+extension debugger API, so arbitrary CDP methods and local file chooser path
+injection are unavailable.
+
 For BitBrowser, install or load the extension in the target BitBrowser instance,
 then register the native host manifest into that instance's user-data directory:
 
@@ -74,7 +100,7 @@ Repair only the native host manifest:
 open-browser-use install-manifest
 ```
 
-Use `--browser chrome-beta` or `--browser <bitbrowser-instance-id>` to repair a
+Use `--browser chrome-beta`, `--browser zen`, or `--browser <bitbrowser-instance-id>` to repair a
 non-default browser.
 
 Print the manifest without installing:
@@ -87,7 +113,7 @@ open-browser-use manifest
 
 - macOS and Windows can require the user to approve or enable the extension after Chrome sees it.
 - Linux external extension registration can require elevated permissions depending on Chrome installation paths.
-- Chrome native messaging host name is `com.ifuryst.open_browser_use.extension`.
+- The browser native messaging host name is `com.ifuryst.open_browser_use.extension`.
 - The default socket registry is under `/tmp/open-browser-use/` on Unix-like systems.
 
 ## Verification
