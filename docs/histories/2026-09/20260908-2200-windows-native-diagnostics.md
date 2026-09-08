@@ -9,6 +9,9 @@
 - Add a read-only PowerShell diagnostic for issue #20. Inspect host registration
   in Chrome lookup order and check manifest name/type/origin, executable presence,
   and the user-level host policy missing from the original report.
+- Test both PowerShell 7 and built-in Windows PowerShell 5.1. The latter exposed
+  an exception on quoted invalid paths; validate Windows paths before calling
+  APIs that throw for those inputs.
 - Report both user-level policy scenarios rather than inferring effective Chrome
   policy from local registry values. Never change registry values or start/stop
   browser or host processes during diagnosis.

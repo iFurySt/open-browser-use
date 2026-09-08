@@ -69,11 +69,12 @@ function Get-NativeHostDiagnosis {
             $checks.Add('No readable string registration found in this policy scenario.')
         } else {
             $path = [string]$selected.Result.Value
-            $absolute = [System.IO.Path]::IsPathRooted($path)
             if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
                 $absolute = $path -match '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)'
+            } else {
+                $absolute = [System.IO.Path]::IsPathRooted($path)
             }
-            if (-not $absolute -or $path.StartsWith('"')) {
+            if (-not $absolute -or $path.Contains('"') -or $path.IndexOfAny([System.IO.Path]::GetInvalidPathChars()) -ge 0) {
                 $checks.Add('Registered manifest path must be absolute and must not include surrounding quotes.')
             } elseif (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                 $checks.Add('The selected registration points to a missing manifest; a later registration does not repair this earlier match.')
