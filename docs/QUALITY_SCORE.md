@@ -19,3 +19,11 @@
 | 测试 | B | `make ci` 覆盖 docs/repo hygiene、action pinning、Chrome/Zen extension 打包、脚本语法、Go 测试、Firefox adapter 测试、JS/Python/Go SDK 协议测试、Python SDK smoke 和 fake native host/extension peer relay 测试。 | 补真实 Chrome/Zen 自动化 smoke 和 popup 截图 smoke。 |
 | 可观测性 | C | native host 和 extension 已有基础错误传播，但跨 Native Messaging、Unix socket 和 SDK 的关联日志仍不足。 | 增加 request id、事件分层日志和可脱敏 debug trace。 |
 | 安全 | C | Chrome route 明确不内置上层站点策略，manifest origin 限制和本地 socket 文件权限已有默认约束。 | 补 socket token/peer 授权、失败路径安全测试和安装权限审计说明。 |
+
+## Zen compatibility verification boundary
+
+PR #14 follow-up adds regression coverage for Windows family manifest
+coexistence and ungrouped session ownership (concurrent claims, restored state,
+reclaims, handoff/deliverable cleanup). The targeted Windows CI job does not
+exercise registry writes or a real Zen browser. Persistent signed installation
+and real Windows/Zen runtime smoke remain outstanding.

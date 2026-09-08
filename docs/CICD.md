@@ -93,3 +93,12 @@ workflow 还会在 `release-evidence` artifact 中保留内部追溯材料：
 - 对 extension zip/CRX、Zen XPI 和 skill 包生成的 GitHub artifact attestation
 
 也就是说，即使项目还没进入真实部署阶段，这个模板也已经把“可追溯的制品封装”这一步准备好了。
+
+## Windows native manifest regression checks
+
+`ci.yml` also runs targeted Go tests on `windows-latest` for Chrome/Zen manifest
+coexistence, default Windows path selection, native launch arguments, and
+executable copying. These tests write only temporary manifests with explicit
+`--output` semantics; they assert registry key names but do not write/query the
+Windows registry or launch a browser. A passing job is not a Zen/Windows browser
+smoke test.

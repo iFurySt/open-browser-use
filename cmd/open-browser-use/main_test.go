@@ -1840,3 +1840,78 @@ func readManifestFromZIP(path string) ([]byte, error) {
 	}
 	return nil, errors.New("manifest.json not found in ZIP")
 }
+
+// Exercise both install orders with real files, without modifying the machine's
+// registry. On Windows also verify that default selector routing uses these paths.
+func TestWindowsNativeHostManifestCoexistence(t *testing.T) {
+	for _, order := range [][]string{{"chrome", "zen", "chrome"}, {"zen", "chrome", "zen"}} {
+		t.Run(strings.Join(order, "-"), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			localData := filepath.Join(home, "Local App Data")
+			t.Setenv("LOCALAPPDATA", localData)
+			exe, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			paths := map[string]string{
+				"chrome": windowsNativeHostManifestPath(localData, "chromium"),
+				"zen":    windowsNativeHostManifestPath(localData, "firefox"),
+			}
+			if paths["chrome"] == paths["zen"] {
+				t.Fatal("browser families must not share a manifest")
+			}
+			legacy := filepath.Join(localData, "OpenBrowserUse", "NativeMessagingHosts", host.NativeHostName+".json")
+			if paths["chrome"] != legacy {
+				t.Fatalf("Chrome path changed: %s", paths["chrome"])
+			}
+			snapshots := map[string]string{}
+			for _, browser := range order {
+				path := paths[browser]
+				if runtime.GOOS == "windows" {
+					got, err := defaultNativeHostManifestPathForBrowser(browser)
+					if err != nil || got != path {
+						t.Fatalf("default %s path: %q, %v", browser, got, err)
+					}
+				}
+				got, err := installNativeManifestForBrowser("", exe, path, browser)
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload, err := os.ReadFile(got)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var manifest map[string]any
+				if err := json.Unmarshal(payload, &manifest); err != nil {
+					t.Fatal(err)
+				}
+				field, other, id := "allowed_origins", "allowed_extensions", "chrome-extension://"+defaultChromeExtensionID+"/"
+				if browser == "zen" {
+					field, other, id = other, field, defaultFirefoxExtensionID
+				}
+				values, ok := manifest[field].([]any)
+				if !ok || len(values) != 1 || values[0] != id || manifest[other] != nil {
+					t.Fatalf("wrong %s allowlist: %#v", browser, manifest)
+				}
+				if !isNativeMessagingLaunch([]string{paths["zen"], defaultFirefoxExtensionID}) {
+					t.Fatal("Firefox manifest path must still select native host mode")
+				}
+				snapshots[browser] = string(payload)
+				for installed, expected := range snapshots {
+					current, err := os.ReadFile(paths[installed])
+					if err != nil || string(current) != expected {
+						t.Fatalf("installing %s overwrote %s", browser, installed)
+					}
+				}
+			}
+			if got := windowsNativeHostRegistryKey("firefox"); got != `HKCU\Software\Mozilla\NativeMessagingHosts\`+host.NativeHostName {
+				t.Fatalf("wrong Firefox registry key: %s", got)
+			}
+			if got := windowsNativeHostRegistryKey("chromium"); got != `HKCU\Software\Google\Chrome\NativeMessagingHosts\`+host.NativeHostName {
+				t.Fatalf("wrong Chrome registry key: %s", got)
+			}
+		})
+	}
+}

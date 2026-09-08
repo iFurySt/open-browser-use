@@ -347,11 +347,11 @@ func installNativeManifestForBrowser(extensionID string, binaryPath string, outp
 		return "", err
 	}
 	if outputPath == "" && runtime.GOOS == "windows" {
-		registryVendor := `Google\Chrome`
-		if family, familyErr := browserFamilyForSelector(browserSelector); familyErr == nil && family == "firefox" {
-			registryVendor = `Mozilla`
+		family, err := browserFamilyForSelector(browserSelector)
+		if err != nil {
+			return "", err
 		}
-		key := `HKCU\Software\` + registryVendor + `\NativeMessagingHosts\` + host.NativeHostName
+		key := windowsNativeHostRegistryKey(family)
 		if err := regAddDefaultString(key, path); err != nil {
 			return "", fmt.Errorf("failed to register native messaging host %q: %w", key, err)
 		}
@@ -3168,10 +3168,28 @@ func defaultNativeHostManifestPathForBrowser(browserSelector string) (string, er
 		if strings.TrimSpace(localAppData) == "" {
 			localAppData = filepath.Join(home, "AppData", "Local")
 		}
-		return filepath.Join(localAppData, "OpenBrowserUse", "NativeMessagingHosts", filename), nil
+		return windowsNativeHostManifestPath(localAppData, family), nil
 	default:
 		return "", fmt.Errorf("default manifest install path is not implemented for %s; pass --output", runtime.GOOS)
 	}
+}
+
+// Keep the Chromium path stable for existing registrations. Firefox manifests
+// have a different allowlist schema and must never overwrite that file.
+func windowsNativeHostManifestPath(localAppData string, family string) string {
+	dir := filepath.Join(localAppData, "OpenBrowserUse", "NativeMessagingHosts")
+	if family == "firefox" {
+		dir = filepath.Join(dir, "firefox")
+	}
+	return filepath.Join(dir, host.NativeHostName+".json")
+}
+
+func windowsNativeHostRegistryKey(family string) string {
+	vendor := `Google\Chrome`
+	if family == "firefox" {
+		vendor = `Mozilla`
+	}
+	return `HKCU\Software\` + vendor + `\NativeMessagingHosts\` + host.NativeHostName
 }
 
 func browserFamilyForSelector(selector string) (string, error) {

@@ -1089,7 +1089,16 @@ class BrowserBackend {
   async ensureSessionGroup(sessionId, tabId, origin) {
     const session = await this.store.getSession(sessionId);
     if (!HAS_TAB_GROUPS) {
-      session.tabOrigins[String(tabId)] = origin;
+      const key = String(tabId);
+      // Reserve ownership before awaiting storage so concurrent claims cannot
+      // both succeed. Tab groups are only one browser's ownership mechanism.
+      for (const [ownerId, owner] of Object.entries(this.store.state.sessions)) {
+        if (ownerId !== sessionId && Object.hasOwn(owner.tabOrigins, key)) {
+          throw new Error(`Tab ${tabId} is already part of browser session ${ownerId}`);
+        }
+      }
+      // Reclaiming an agent-created tab must not change its cleanup disposition.
+      session.tabOrigins[key] ??= origin;
       await this.store.save();
       return;
     }

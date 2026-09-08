@@ -259,6 +259,51 @@ async function run() {
     console.log("test 2 ok: keep=[] closes tab, detaches, ends session");
   }
 
+  // Firefox: ownership must survive without Chrome tab groups or debugger.
+  {
+    const { chrome, state, helpers } = createChromeFake();
+    delete chrome.tabGroups;
+    delete chrome.tabs.group;
+    delete chrome.tabs.ungroup;
+    delete chrome.debugger;
+    const { BrowserBackend } = await loadBackground(bgSource, chrome);
+    let backend = new BrowserBackend();
+    await backend.store.ready;
+    const params = (session, tabId) => ({ session_id: session, turn_id: "turn", tabId });
+    const agentTab = helpers.createTab();
+    await backend.ensureSessionGroup("owner", agentTab, "agent");
+    await assert.rejects(backend.claimUserTab(params("other", agentTab)), /already part/);
+    await backend.claimUserTab(params("owner", agentTab));
+    assert.equal(backend.store.state.sessions.owner.tabOrigins[agentTab], "agent");
+    await backend.finalizeTabs({ ...params("other"), keep: [] });
+    assert.ok(state.tabs.has(agentTab), "another session cannot close the owner's tab");
+
+    // Restore persisted ownership into a fresh backend.
+    backend = new BrowserBackend();
+    await backend.store.ready;
+    await assert.rejects(backend.claimUserTab(params("other", agentTab)), /already part/);
+    await backend.finalizeTabs({ ...params("owner"), keep: [] });
+    assert.equal(state.tabs.has(agentTab), false, "reclaim must preserve agent cleanup");
+
+    const userTab = helpers.createTab();
+    const claims = await Promise.allSettled([
+      backend.claimUserTab(params("first", userTab)),
+      backend.claimUserTab(params("second", userTab))
+    ]);
+    assert.equal(claims.filter((r) => r.status === "fulfilled").length, 1);
+    assert.match(claims.find((r) => r.status === "rejected").reason.message, /already part/);
+    const winner = claims[0].status === "fulfilled" ? "first" : "second";
+    const loser = winner === "first" ? "second" : "first";
+    await backend.finalizeTabs({ ...params(winner), keep: [{ tabId: userTab, status: "handoff" }] });
+    await assert.rejects(backend.claimUserTab(params(loser, userTab)), /already part/);
+    await backend.finalizeTabs({ ...params(winner), keep: [{ tabId: userTab, status: "deliverable" }] });
+    assert.ok(state.tabs.has(userTab), "deliverable must remain open");
+    await backend.claimUserTab(params(loser, userTab));
+    await backend.finalizeTabs({ ...params(loser), keep: [] });
+    assert.ok(state.tabs.has(userTab), "released user tab must remain open");
+    console.log("test 3 ok: ungrouped ownership, concurrent claims, restore and cleanup");
+  }
+
   console.log("\nAll finalizeTabs detach tests passed.");
 }
 

@@ -207,7 +207,11 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   session/tab ownership，不新增独立 browser routing layer。
 - Zen/Firefox route 使用稳定 Gecko id `open-browser-use@ifuryst.com`，native
   manifest 使用 `allowed_extensions` 并安装到 Mozilla NativeMessagingHosts
-  位置。Firefox 不实现 Chrome WebExtension debugger API，因此 adapter 只兼容
+  位置。Windows Firefox manifest 单独写入
+  `%LOCALAPPDATA%\OpenBrowserUse\NativeMessagingHosts\firefox\com.ifuryst.open_browser_use.extension.json`，
+  由 `HKCU\Software\Mozilla\NativeMessagingHosts\com.ifuryst.open_browser_use.extension`
+  指向它，避免覆盖 Chrome 原有文件。Firefox 不实现 Chrome WebExtension debugger API，
+  因此 adapter 只兼容
   `Page.navigate`、`Page.reload`、`Page.close`、`Runtime.evaluate`、
   `Target.getTargets` 和基础 enable/version 调用；其他 CDP method 返回明确的
   unsupported error，file chooser 本地路径注入也不可用。`Runtime.evaluate`
@@ -215,8 +219,10 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   Firefox 136–152 通过已注册 bridge 执行，Firefox 153+ 可直接使用
   `userScripts.execute`。这允许 DOM 读取和表单交互而不依赖网站 CSP；
   `userScripts` 是一次性、全局的 optional-only permission，由用户在 popup 中
-  明确授予。Zen 无 tab group API，
-  session membership 改由 extension storage 的 tab origin map 维护。
+  明确授予。当前 XPI 通过临时插件方式载入，重启浏览器后需重新载入并检查权限。
+  无 tab group API 时，通过持久化的 `tabOrigins` 独占归属标签页；
+  ownership 检查和预留在 storage await 前同步完成，重复 claim 保留原始 origin。
+
 - Session state persists the Chrome tab group id, tab origins, group title,
   deliverable group id, and logical active tab id in `chrome.storage.local` so
   MV3 service worker restarts can recover session tab listing semantics.
