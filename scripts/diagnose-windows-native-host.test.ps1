@@ -7,6 +7,7 @@ function Assert($condition, [string]$message) {
 # Exercise actual Unicode registry values and missing keys on Windows, without
 # touching the real Chrome registration. Fixtures live under a unique test key.
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    $unicodePath = 'C:\' + [char]0x6D4B + [char]0x8BD5 + ' ' + [char]0x7528 + [char]0x6237 + '\manifest.json'
     $fixtureKey = 'Software\OpenBrowserUseTests\' + [guid]::NewGuid().ToString('N')
     try {
         foreach ($view in @('Registry32', 'Registry64')) {
@@ -14,11 +15,11 @@ if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
             try {
                 $key = $base.CreateSubKey($fixtureKey)
                 try {
-                    $key.SetValue('', 'C:\测试 用户\manifest.json', [Microsoft.Win32.RegistryValueKind]::String)
+                    $key.SetValue('', $unicodePath, [Microsoft.Win32.RegistryValueKind]::String)
                     $key.SetValue('Disabled', 0, [Microsoft.Win32.RegistryValueKind]::DWord)
                 } finally { $key.Dispose() }
                 $read = Read-NativeRegistryValue CurrentUser $view $fixtureKey
-                Assert ($read.State -eq 'present' -and $read.Value -ceq 'C:\测试 用户\manifest.json') 'Unicode registry path did not round-trip.'
+                Assert ($read.State -eq 'present' -and $read.Value -ceq $unicodePath) 'Unicode registry path did not round-trip.'
                 $read = Read-NativeRegistryValue CurrentUser $view $fixtureKey Disabled
                 Assert ($read.Kind -eq 'DWord' -and $read.Value -eq 0) 'DWORD policy did not round-trip.'
                 $read = Read-NativeRegistryValue CurrentUser $view "$fixtureKey\missing"

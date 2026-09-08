@@ -42,3 +42,6 @@ jobs:
       - name: Test native host diagnostics and Windows registry reads
         shell: pwsh
         run: ./scripts/diagnose-windows-native-host.test.ps1
+      - name: Verify built-in Windows PowerShell compatibility
+        shell: powershell
+        run: ./scripts/diagnose-windows-native-host.test.ps1
