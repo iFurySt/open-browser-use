@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1707,4 +1708,33 @@ func readManifestFromZIP(path string) ([]byte, error) {
 		return payload, closeErr
 	}
 	return nil, errors.New("manifest.json not found in ZIP")
+}
+
+func TestIsStaleSocketError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		stale bool
+	}{
+		{"missing", syscall.ENOENT, true},
+		{"refused", syscall.ECONNREFUSED, true},
+		{"sandbox denied", syscall.EPERM, false},
+		{"access denied", syscall.EACCES, false},
+		{"timeout", syscall.ETIMEDOUT, false},
+		{"resource exhaustion", syscall.EMFILE, false},
+		{"unknown", errors.New("unknown dial failure"), false},
+		{"success", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isStaleSocketError(tc.err); got != tc.stale {
+				t.Fatalf("isStaleSocketError(%v) = %v, want %v", tc.err, got, tc.stale)
+			}
+			if tc.err != nil {
+				wrapped := &net.OpError{Op: "dial", Net: "unix", Err: &os.SyscallError{Syscall: "connect", Err: tc.err}}
+				if got := isStaleSocketError(wrapped); got != tc.stale {
+					t.Fatalf("wrapped error: got %v, want %v", got, tc.stale)
+				}
+			}
+		})
+	}
 }

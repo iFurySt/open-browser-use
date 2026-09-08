@@ -31,7 +31,10 @@ The CLI first discovers the active socket from the registry. If the registry is
 missing, recent CLI versions scan `--socket-dir` for `*.sock` files and connect
 to the newest usable socket, then repair the registry. If the registry points to
 a stale socket, the CLI removes the stale entry and stale socket file, then tries
-the same socket-dir scan.
+the same socket-dir scan. Cleanup only applies to missing sockets or refused
+connections. Permission errors and timeouts preserve the socket; discovery
+reports those errors if no usable socket is found. If a sandbox blocks local
+socket access, retry from an execution context with permission to connect.
 
 Useful flags:
 
