@@ -84,3 +84,39 @@ Ask the user for help when:
 - Chrome requires extension confirmation or enablement.
 - The page requires login, CAPTCHA, hardware key, payment confirmation, or another human-only step.
 - The requested browser action affects external systems.
+
+## Windows: Chrome reports native messaging host not found
+
+A host that starts manually does not prove that Chrome found the same manifest.
+From a source checkout, run the read-only diagnostic script in PowerShell:
+
+```powershell
+powershell -NoProfile -File .\scripts\diagnose-windows-native-host.ps1
+# For a beta/unpacked installation, pass the extension ID from chrome://extensions:
+powershell -NoProfile -File .\scripts\diagnose-windows-native-host.ps1 -ExtensionId <extension-id>
+```
+
+The script checks HKCU/HKLM and both registry views, then inspects the selected
+manifest and executable without launching either Chrome or the host. It shows
+selection with user-level hosts allowed and disabled. Inspect `chrome://policy`
+for the effective `NativeMessagingUserLevelHosts`, `NativeMessagingBlocklist`,
+and `NativeMessagingAllowlist` values; cloud policies are not necessarily present
+in the local registry. If user-level hosts are disabled, Chrome ignores the HKCU
+registration created by `setup`. An administrator must allow user-level hosts or
+deploy an approved machine-level registration; repeating `setup` cannot override
+that policy.
+
+Chrome checks HKCU first when permitted, then HKLM, and the 32-bit view before
+the 64-bit view within each hive. A readable earlier registration pointing to a
+missing/invalid manifest can shadow a later valid registration. The script does
+not change either entry. Its static checks do not validate Chrome's ability to
+launch the host or complete the native messaging handshake.
+
+If static checks pass, reconnect the extension and capture the corresponding
+Chrome native messaging error using Chrome's documented logging procedure.
+Include effective policy and the selected registration in the report, and redact
+usernames and private paths before sharing diagnostic output. Issue #20 remains
+unconfirmed until the affected Windows/Chrome environment is reproduced.
+
+References: [Chrome native messaging troubleshooting](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging#debugging-native-messaging),
+[Chromium Windows host lookup](https://github.com/chromium/chromium/blob/main/chrome/browser/extensions/api/messaging/launch_context_win.cc).
