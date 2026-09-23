@@ -9,6 +9,9 @@ let latestState = {
   turnId: null
 };
 let cursorRenderer = null;
+let interactionFeedback = null;
+let stateRevision = 0;
+let feedbackTurnKey = null;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "OPEN_BROWSER_USE_PING") {
@@ -16,14 +19,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "OPEN_BROWSER_USE_CURSOR_STATE") {
+    stateRevision += 1;
     latestState = normalizeState(message.state);
     renderState(latestState);
     sendResponse({ ok: true });
     return true;
   }
   if (message?.type === "OPEN_BROWSER_USE_CURSOR") {
+    stateRevision += 1;
     latestState = {
       cursor: {
+        ...(message.animateMovement === false ? { animateMovement: false } : {}),
         moveSequence: message.moveSequence,
         visible: message.visible !== false,
         x: Number(message.x) || 0,
@@ -34,6 +40,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       turnId: typeof message.turnId === "string" ? message.turnId : latestState.turnId
     };
     renderState(latestState);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (message?.type === "OPEN_BROWSER_USE_POINTER_EVENT") {
+    if (
+      message.eventType === "mousePressed" &&
+      latestState.isVisible &&
+      latestState.cursor?.visible !== false &&
+      message.sessionId === latestState.sessionId &&
+      (latestState.turnId === null || message.turnId === latestState.turnId)
+    ) {
+      interactionFeedback?.click(message.x, message.y);
+    }
     sendResponse({ ok: true });
     return true;
   }
@@ -55,6 +74,7 @@ function ensureCursorRenderer() {
     assetUrl: chrome.runtime.getURL("images/cursor-chat.png"),
     onArrived: notifyCursorArrived
   });
+  interactionFeedback = createInteractionFeedback(root);
   return cursorRenderer;
 }
 
@@ -62,12 +82,115 @@ function renderState(state) {
   const renderer = ensureCursorRenderer();
   const cursor = normalizeCursor(state.cursor);
   const viewportSize = readViewportSize();
+  const visible = state.isVisible === true && cursor?.visible !== false;
+  const turnKey = typeof state.sessionId === "string" ? `${state.sessionId}:${state.turnId ?? ""}` : null;
+  if (feedbackTurnKey !== turnKey) interactionFeedback.clear();
+  feedbackTurnKey = turnKey;
+  if (visible && cursor) {
+    interactionFeedback.highlight(cursor.x, cursor.y);
+  } else {
+    interactionFeedback.clear();
+  }
   renderer.setState({
     cursor,
-    isVisible: state.isVisible === true && cursor?.visible !== false,
-    turnKey: typeof state.sessionId === "string" ? `${state.sessionId}:${state.turnId ?? ""}` : null,
+    isVisible: visible,
+    reducedMotion: prefersReducedMotion(),
+    turnKey,
     viewportSize
   });
+}
+
+function createInteractionFeedback(root) {
+  const interactiveSelector = [
+    "button", "a[href]", "input", "textarea", "select", "summary",
+    '[contenteditable]:not([contenteditable="false"])',
+    '[role="button"]', '[role="link"]', '[role="checkbox"]',
+    '[role="radio"]', '[role="switch"]', '[role="textbox"]',
+    '[tabindex]:not([tabindex="-1"])'
+  ].join(",");
+  const outline = document.createElement("div");
+  outline.dataset.testid = "browser-agent-target";
+  Object.assign(outline.style, {
+    all: "initial", position: "absolute", pointerEvents: "none",
+    boxSizing: "border-box", border: "2px solid #4f8cff",
+    borderRadius: "5px", background: "rgba(79, 140, 255, 0.08)",
+    display: "none"
+  });
+  root.appendChild(outline);
+  const rings = new Map();
+
+  const validPoint = (x, y) => {
+    const { width, height } = readViewportSize();
+    return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x < width && y < height;
+  };
+  const highlight = (x, y) => {
+    outline.style.display = "none";
+    if (!validPoint(x, y)) return;
+    // Hit-test only this document. An iframe is highlighted as a frame; no
+    // coordinates or page state are read from its child document.
+    let hit = document.elementsFromPoint(x, y).find((element) => !root.contains(element));
+    // Web Components expose their host to document hit testing. Descend only
+    // through open shadow roots, keeping closed roots and frames opaque.
+    while (hit?.shadowRoot) {
+      const shadow = hit.shadowRoot;
+      const inner = shadow.elementFromPoint(x, y);
+      if (!inner || inner === hit || !shadow.contains(inner)) break;
+      hit = inner;
+    }
+    const target = hit?.closest(interactiveSelector) ?? hit;
+    if (!target?.isConnected || target === document.documentElement || target === document.body) return;
+    const rect = target.getBoundingClientRect();
+    if (![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) return;
+    Object.assign(outline.style, {
+      left: `${rect.left}px`, top: `${rect.top}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`, display: "block"
+    });
+  };
+  const removeRing = (ring) => {
+    const effect = rings.get(ring);
+    if (!effect) return;
+    window.clearTimeout(effect.timer);
+    effect.animation?.cancel();
+    ring.remove();
+    rings.delete(ring);
+  };
+  const clear = () => {
+    outline.style.display = "none";
+    for (const ring of rings.keys()) removeRing(ring);
+  };
+  return {
+    clear,
+    highlight,
+    click: (x, y) => {
+      if (!validPoint(x, y)) return;
+      highlight(x, y);
+      // Each click owns its effect, so a second click never restarts cursor
+      // travel or leaves the first click's timer behind.
+      if (rings.size >= 8) removeRing(rings.keys().next().value);
+      const ring = document.createElement("div");
+      ring.dataset.testid = "browser-agent-click";
+      Object.assign(ring.style, {
+        all: "initial", position: "absolute", pointerEvents: "none",
+        boxSizing: "border-box", left: `${x}px`, top: `${y}px`,
+        width: "28px", height: "28px", border: "2px solid #14b8a6",
+        borderRadius: "50%", background: "rgba(20, 184, 166, 0.15)",
+        transform: "translate(-50%, -50%)", opacity: "1"
+      });
+      root.appendChild(ring);
+      const reducedMotion = prefersReducedMotion();
+      const duration = reducedMotion ? 200 : 450;
+      const animation = reducedMotion ? null : ring.animate?.([
+        { transform: "translate(-50%, -50%) scale(0.5)", opacity: 1 },
+        { transform: "translate(-50%, -50%) scale(1.5)", opacity: 0 }
+      ], { duration, easing: "ease-out" });
+      const timer = window.setTimeout(() => removeRing(ring), duration);
+      rings.set(ring, { animation, timer });
+    }
+  };
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
 function normalizeState(state) {
@@ -130,10 +253,11 @@ function notifyCursorArrived(moveSequence) {
 }
 
 function refreshCursorState() {
+  const revision = stateRevision;
   chrome.runtime
     .sendMessage({ type: "GET_OPEN_BROWSER_USE_CURSOR_STATE" })
     .then((response) => {
-      if (response?.ok) {
+      if (response?.ok && revision === stateRevision) {
         latestState = normalizeState(response.state);
         renderState(latestState);
       }
@@ -141,8 +265,19 @@ function refreshCursorState() {
     .catch(() => {});
 }
 
-window.addEventListener("resize", () => renderState(latestState));
-window.visualViewport?.addEventListener("resize", () => renderState(latestState));
+const clearInteractionFeedback = () => interactionFeedback?.clear();
+window.addEventListener("scroll", clearInteractionFeedback, true);
+window.addEventListener("resize", clearInteractionFeedback);
+window.visualViewport?.addEventListener("resize", clearInteractionFeedback);
+window.visualViewport?.addEventListener("scroll", clearInteractionFeedback);
+window.addEventListener("pagehide", () => {
+  stateRevision += 1;
+  latestState = normalizeState(null);
+  interactionFeedback?.clear();
+  interactionFeedback = null;
+  cursorRenderer?.destroy();
+  cursorRenderer = null;
+});
 refreshCursorState();
 
 const BASE_ROTATION = -44;
@@ -247,6 +382,13 @@ function createCursorRenderer(root, { assetUrl, onArrived }) {
       parts.layer.remove();
     },
     setState: (state) => {
+      if (state.isVisible === false || state.cursor?.visible === false) {
+        if (frameId != null) cancelCursorFrame(frameId);
+        frameId = null;
+        model = null;
+        parts.cursor.style.opacity = "0";
+        return;
+      }
       const turnKey = state.turnKey ?? "";
       const hasCursor = state.cursor != null;
       const point = normalizePoint({
@@ -265,6 +407,16 @@ function createCursorRenderer(root, { assetUrl, onArrived }) {
         model = createCursorModel(point, visible);
       }
       model.visibilitySpring.target = visible ? 1 : 0;
+      if (state.reducedMotion === true) {
+        if (frameId != null) cancelCursorFrame(frameId);
+        frameId = null;
+        model.thinkStartedAt = null;
+        resetSpring(model.visibilitySpring, 1);
+        snapCursor(model, point);
+        applyCursorTransform(parts.cursor, model);
+        reportArrival();
+        return;
+      }
       if (becameVisibleWithoutCursor && thinkingTurnKey !== turnKey) {
         thinkingTurnKey = turnKey;
         resetSpring(model.visibilitySpring, 1);
