@@ -9,6 +9,8 @@ const DEFAULT_WEBMCP_TIMEOUT_MS = 10_000;
 const DEFAULT_WEBMCP_LIST_TIMEOUT_MS = 5_000;
 const WEBMCP_TIMEOUT_GRACE_MS = 1_500;
 const CURSOR_ARRIVAL_TIMEOUT_MS = 1_000;
+const POINTER_FEEDBACK_TIMEOUT_MS = 250;
+const MAX_POINTER_FEEDBACK_JOBS = 8;
 const MAX_USER_TABS = 1000;
 const DEFAULT_SESSION_GROUP_TITLE = "Task - OBU";
 const DELIVERABLE_GROUP_TITLE = "✅ Open Browser Use";
@@ -303,6 +305,7 @@ class BrowserBackend {
     this.attachedTabs = new Set();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
+    this.pointerFeedbackByTabId = new Map();
     this.downloadFilenamesById = new Map();
     this.downloadUrlsById = new Map();
     this.downloadsById = new Map();
@@ -314,6 +317,7 @@ class BrowserBackend {
     this.nextCursorMoveSequence = 1;
     chrome.debugger.onDetach.addListener((source) => {
       if (typeof source.tabId === "number") {
+        this.clearPointerFeedback(source.tabId);
         this.attachedTabs.delete(source.tabId);
       }
     });
@@ -577,7 +581,7 @@ class BrowserBackend {
       typeof params.timeoutMs === "number" && params.timeoutMs > 0
         ? params.timeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
-    return await withTimeout(timeoutMs, async () => {
+    const result = await withTimeout(timeoutMs, async () => {
       if (params.method === "Target.getTargets") {
         return { targetInfos: await chrome.debugger.getTargets() };
       }
@@ -586,6 +590,110 @@ class BrowserBackend {
       }
       return await chrome.debugger.sendCommand(target, params.method, params.commandParams ?? {});
     });
+    // The low-level CLI/SDK route must show the same pointer as moveMouse.
+    // Feedback is optional: a restricted or unresponsive page must not turn a
+    // successful input command into a failure (and cause the caller to retry it).
+    this.enqueuePointerFeedback(params);
+    return result;
+  }
+
+  enqueuePointerFeedback(params) {
+    const { target, method, commandParams: event } = params;
+    const tabId = target?.tabId;
+    if (
+      method !== "Input.dispatchMouseEvent" ||
+      !Number.isInteger(tabId) ||
+      target.sessionId != null ||
+      !["mouseMoved", "mousePressed", "mouseReleased", "mouseWheel"].includes(event?.type) ||
+      !Number.isFinite(event.x) ||
+      !Number.isFinite(event.y) ||
+      !this.attachedTabs.has(tabId)
+    ) {
+      return;
+    }
+
+    let queue = this.pointerFeedbackByTabId.get(tabId);
+    if (!queue) {
+      queue = { pending: [] };
+      this.pointerFeedbackByTabId.set(tabId, queue);
+    }
+    const previous = queue.pending.at(-1);
+    if (
+      event.type === "mouseMoved" && previous?.commandParams.type === "mouseMoved" &&
+      previous.session_id === params.session_id && previous.turn_id === params.turn_id
+    ) {
+      queue.pending.pop();
+    }
+    // Count the in-flight job as well. Overflow drops only visual feedback,
+    // never input, while retaining the most recent position.
+    if (queue.pending.length >= MAX_POINTER_FEEDBACK_JOBS - 1) queue.pending.shift();
+    queue.pending.push({
+      session_id: params.session_id, turn_id: params.turn_id,
+      target: { tabId }, commandParams: { type: event.type, x: event.x, y: event.y }
+    });
+    if (!queue.running) {
+      queue.running = this.drainPointerFeedback(tabId, queue);
+    }
+  }
+
+  async drainPointerFeedback(tabId, queue) {
+    while (this.pointerFeedbackByTabId.get(tabId) === queue && queue.pending.length > 0) {
+      const params = queue.pending.shift();
+      await this.publishPointerFeedback(params, queue).catch(() => {});
+    }
+    if (this.pointerFeedbackByTabId.get(tabId) === queue) this.pointerFeedbackByTabId.delete(tabId);
+  }
+
+  clearPointerFeedback(tabId) {
+    const queue = this.pointerFeedbackByTabId.get(tabId);
+    if (queue) queue.pending.length = 0;
+    this.pointerFeedbackByTabId.delete(tabId);
+  }
+
+  async publishPointerFeedback(params, queue) {
+    const tabId = params.target.tabId;
+    const event = params.commandParams;
+
+    const previous = this.cursorByTabId.get(tabId);
+    const cursor = {
+      moveSequence: previous?.x === event.x && previous?.y === event.y
+        ? previous.moveSequence
+        : this.nextCursorMoveSequence++,
+      animateMovement: false,
+      visible: true,
+      x: event.x,
+      y: event.y
+    };
+    this.cursorByTabId.set(tabId, cursor);
+    let expired = false;
+    const isCurrent = () => !expired && this.attachedTabs.has(tabId) &&
+      this.pointerFeedbackByTabId.get(tabId) === queue && this.cursorByTabId.get(tabId) === cursor;
+    try {
+      await withTimeout(POINTER_FEEDBACK_TIMEOUT_MS, async () => {
+        if (!(await this.ensureCursorContentScript(params.session_id, tabId)) || !isCurrent()) {
+          return;
+        }
+        await chrome.tabs.sendMessage(tabId, {
+          type: "OPEN_BROWSER_USE_CURSOR",
+          sessionId: params.session_id,
+          turnId: params.turn_id,
+          ...cursor
+        });
+        if (event.type === "mousePressed" && isCurrent()) {
+          await chrome.tabs.sendMessage(tabId, {
+            type: "OPEN_BROWSER_USE_POINTER_EVENT",
+            sessionId: params.session_id,
+            turnId: params.turn_id,
+            eventType: event.type,
+            x: event.x,
+            y: event.y
+          });
+        }
+      });
+    } finally {
+      // Ignore a slow injection that finishes after a newer move or turn end.
+      expired = true;
+    }
   }
 
   async webmcp_list_tools(params) {
@@ -648,6 +756,7 @@ class BrowserBackend {
     if (!Number.isFinite(params.x) || !Number.isFinite(params.y)) {
       throw new Error("moveMouse requires finite x and y");
     }
+    this.clearPointerFeedback(tabId);
     const cursorReady = await this.ensureCursorContentScript(session.sessionId, tabId);
     if (!cursorReady) {
       throw new Error(`Cannot inject cursor content script into tab ${tabId}`);
@@ -1247,9 +1356,11 @@ class BrowserBackend {
   }
 
   async detachTab(tabId) {
+    this.clearPointerFeedback(tabId);
     try {
       await chrome.debugger.detach({ tabId });
     } finally {
+      this.clearPointerFeedback(tabId);
       this.attachedTabs.delete(tabId);
       for (const [fileChooserId, chooser] of this.fileChoosersById) {
         if (chooser.tabId === tabId) {
