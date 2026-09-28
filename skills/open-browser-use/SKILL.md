@@ -12,7 +12,7 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 ## Core Workflow
 
 1. Check setup with `open-browser-use ping` or `obu ping`. If it fails because setup is missing, read [references/installation.md](references/installation.md).
-2. Pick the right browser/profile if multiple are installed. See "Browser and profile handling" below before issuing browser commands.
+2. Pick the right browser/profile from the connected targets. See "Browser and profile handling" below before issuing browser commands.
 3. Choose a unique browser session id for the current agent task before opening or claiming tabs. Prefer the surrounding runtime's conversation/session id when available; otherwise create a short unique id such as `obu-<task-slug>-<timestamp>`. Reuse that same id for every Open Browser Use command in this task.
 4. Name the current browser task group before opening or claiming tabs. Use a short task label followed by ` - OBU`; if no better task label is available, use `Task - OBU`.
 5. Before opening a new tab, run `user-tabs` / `user_tabs` and check whether the task continues from an existing tab, including tabs in `✅ Open Browser Use` or an earlier `handoff` task group. If the URL/title/group clearly matches the current task, claim that tab and continue from it instead of opening a duplicate. When verifying or accepting a local change, this also covers a dev server tab the user already has open (for example `localhost`, `127.0.0.1`, or a `*.local` / `*.test` host): claim and reuse it rather than opening a second copy of the same app.
@@ -41,10 +41,10 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 ## Browser and profile handling
 
 Some users run several supported browsers (for example Google Chrome, Google
-Chrome Beta, or BitBrowser) and may also have multiple profiles inside them. If
-more than one browser/profile target has the Open Browser Use extension
-installed, the agent must decide which target this task should operate on rather
-than silently picking whatever window happens to be active.
+Chrome Beta, or BitBrowser) and may also have multiple profiles inside them.
+Installed targets remain visible even when their browser/profile is closed, so
+use the `CONNECTED` state—not the number of installed targets—to decide whether
+the agent needs to ask which target this task should operate on.
 
 1. Before any browser command, list installed browser/profile targets:
 
@@ -59,32 +59,37 @@ than silently picking whatever window happens to be active.
    `target` such as `chrome:Default`, `chrome-beta:Default`, or
    `bitbrowser:<instance>:Default`.
 
-2. If exactly one target is installed and connected, proceed without asking.
-   If it is installed but not connected, ask the user to open Chrome on that
-   browser/profile before running browser commands.
+2. If the user already specified a browser/profile, use that target. If it is
+   not connected, ask the user to open it before retrying. Do not silently fall
+   back to another connected target.
 
-3. If multiple targets are installed and the user did not already specify
-   which one to use, ask before the first browser command. List both directory
-   name and display name plus the browser name so the user can recognize them,
-   and include whether each target is connected.
+3. If the user did not specify a target, count the connected targets. If exactly
+   one target is connected, proceed without asking, even when other installed
+   targets are listed as disconnected. Pass that connected target's selectors
+   to subsequent commands so the task remains pinned to it.
 
-4. If the chosen target is not connected, ask the user to open that browser and
-   profile before retrying. Do not silently fall back to a different connected
-   browser/profile.
+4. If multiple targets are connected, ask which one to use before the first
+   browser command. List each connected target's browser name, directory name,
+   and display name so the user can recognize it.
 
-5. After the user has chosen, pass `--browser <selector>` and, when needed,
-   `--profile <selector>` to every CLI / MCP command for the rest of the task.
+5. If no target is connected, ask the user to open one before running browser
+   commands. When multiple installed targets are listed, ask which target they
+   want to open; when exactly one is listed, name it directly. If none are
+   installed, follow the installation guidance.
+
+6. After the target has been selected, pass `--browser <selector>` and, when
+   needed, `--profile <selector>` to every CLI / MCP command for the rest of the task.
    Browser selectors accept ids such as `chrome`, `chrome-beta`, `bitbrowser`,
    browser display names, or a BitBrowser instance id. Profile selectors accept
    either the directory name (`Default`, `Profile 1`) or the display name
    (`Eva`, `cookiy.com`), case-insensitive. Do not switch browser/profile
    mid-task.
 
-6. If `--browser` / `--profile` does not match any running host, the CLI prints
+7. If `--browser` / `--profile` does not match any running host, the CLI prints
    which targets are currently connected. Ask the user to open the chosen
    browser/profile, then retry; do not silently fall back to a different target.
 
-7. For MCP, lock the browser/profile at server start:
+8. For MCP, lock the browser/profile at server start:
 
    ```toml
    [mcp_servers.open_browser_use]
@@ -95,7 +100,7 @@ than silently picking whatever window happens to be active.
    Do not pass browser/profile as per-tool-call arguments — the MCP server
    applies the start-time selectors to every call.
 
-8. Do not remember the user's browser/profile choice across unrelated tasks. A
+9. Do not remember the user's browser/profile choice across unrelated tasks. A
    future task may belong to a different target; ask again rather than assuming.
 
 ## Common CLI Actions

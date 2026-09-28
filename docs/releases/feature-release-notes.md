@@ -4,6 +4,7 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-09-28 | Connected Profile Selection | 只有一个 Chrome/browser profile 实际连接时，Agent 会直接使用并固定该目标，不再因为其他已关闭或未启用扩展的 Profile 仍留有安装记录而打断用户确认。 | Open Browser Use skill 改为按 `profiles --connected` 的 connected target 数量决策；多个 connected target 才询问，零个时提示打开目标，同时保留 installed 列表用于诊断。 |
 | 2026-09-03 | WebMCP Page Tools | Agent 可以在已经 claim 的真实 Chrome 页面中发现并调用站点通过 `document.modelContext` 注册的 WebMCP 工具，不需要退回通用 DOM 自动化。 | 新增 `webmcp_list_tools` / `webmcp_invoke_tool` JSON-RPC 能力、`getInfo` 的 `webmcp` tab capability、MAIN/ISOLATED 双层 bridge，以及浏览器没有原生 `document.modelContext` 时的 page-facing shim；同时加入 snapshot `registration_id` 校验、MCP-B 5.1.0 fixture 和 Node 回归测试；继续复用现有 session/tab ownership，不包含新的 leases 或 per-site allowlist UI。 |
 | 2026-09-03 | CLI JSON-RPC Reliability | Agent 长时间通过 CLI 或 MCP 操作浏览器时，周期性 heartbeat 不再偶发顶替截图、CDP 或其他命令的真实结果。 | 发布 `0.1.42` patch 版本，CLI 请求读取现在按 request id 等待对应响应，并跳过其间插入的 notification；新增 heartbeat 先于响应到达的回归测试。 |
 
