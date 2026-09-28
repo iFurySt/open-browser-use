@@ -76,7 +76,7 @@
    - `obu profiles --connected` / `obu info`：附加显示当前已连通的 profile（directory + displayName + instanceId）。
 
 5. **M5 — Skill 指引**
-   - 在 `skills/open-browser-use/SKILL.md` 增加 "Multi-profile handling" 章节：先 `obu profiles` → 多于 1 个就问用户 → 任务内持续使用。
+   - 在 `skills/open-browser-use/SKILL.md` 增加 "Multi-profile handling" 章节：先 `obu profiles --connected` → 多于 1 个 connected target 才问用户 → 任务内持续使用。
    - 给出"用户已在 prompt 里指定 profile 名称"时的快路径，不必再问。
 
 6. **M6 — 文档与发布**
@@ -102,8 +102,9 @@
 
 1. **TC-1 单 profile：行为不回退**
    - 关闭 `Profile 1` 的 Chrome 窗口，只留 `Default` 运行。
-   - 运行 `obu profiles` → 期望只列出 `Default`，带版本号。
-   - 运行 `obu tabs` 不带 `--profile` → 期望和当前 main 行为一致，能列 tabs。
+   - 运行 `obu profiles --connected` → 期望仍列出两个已安装 profile，但只有 `Default` 标记为 connected。
+   - Agent 直接选择并固定使用 `Default`，不因已关闭的 `Profile 1` 打断用户确认。
+   - 运行 `obu tabs --profile Default` → 期望能列 tabs。
 
 2. **TC-2 多 profile：列表正确**
    - 同时启动 `Default` 和 `Profile 1` 两个 Chrome 窗口。
