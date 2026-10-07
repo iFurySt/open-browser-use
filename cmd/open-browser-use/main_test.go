@@ -916,11 +916,14 @@ func TestProfilesJSONOutputRemainsValidWithUnresolvedHost(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
 		t.Fatalf("expected strict JSON output, got %q: %v", output.String(), err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected one installed profile row, got %+v", got)
+	if len(got) != 2 {
+		t.Fatalf("expected installed profile and unresolved connected host rows, got %+v", got)
 	}
 	if _, ok := got[0]["connected"]; ok {
 		t.Fatalf("unresolved host should not mark installed profile connected: %+v", got[0])
+	}
+	if got[1]["connected"] != true || got[1]["instanceId"] != connected[0].InstanceID || got[1]["socketPath"] != connected[0].SocketPath {
+		t.Fatalf("unresolved connected host must remain discoverable: %+v", got[1])
 	}
 }
 

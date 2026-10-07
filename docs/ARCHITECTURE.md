@@ -198,7 +198,7 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   位置。Firefox 不实现 Chrome WebExtension debugger API，因此 adapter 只兼容
   `Page.navigate`、`Page.reload`、`Page.close`、`Runtime.evaluate`、
   `Target.getTargets` 和基础 enable/version 调用；其他 CDP method 返回明确的
-  unsupported error，file chooser 本地路径注入也不可用。`Runtime.evaluate`
+  unsupported error，native file chooser 本地路径注入也不可用。`Runtime.evaluate`
   使用 Firefox MV3 user-script API 在隔离的 `USER_SCRIPT` world 中运行：
   Firefox 136–152 通过已注册 bridge 执行，Firefox 153+ 可直接使用
   `userScripts.execute`。这允许 DOM 读取和表单交互而不依赖网站 CSP；
@@ -249,3 +249,28 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
 - 包分层与依赖边界。
 - 数据流与存储模型。
 - 可观测性方案和本地开发模式。
+
+## Host DOM helpers (2026-10-07)
+
+The Go CLI and stdio MCP server share `dom.go`, the embedded `dom-actions.js`,
+and `dom_mcp.go`. These helpers reuse attach/Runtime.evaluate in the installed
+extension; they add no extension wire methods and require no extension upgrade.
+Direct CLI `page-info`/`wait-load` now expose existing runner actions. New focused
+CLI/MCP commands provide bounded snapshots, serialized evaluation, unique CSS
+clicks, guarded form fills, condition waits, and file-input assignment. The line
+action runner retains its existing action surface.
+
+All fill targets are validated before writes. Native value setters and events
+update framework forms; expectedValue protects unexpected drafts. Helpers never
+invoke submit during fill/upload, though site events can autosave. This is not
+an atomic transaction if the page rerenders during writes. Uploads read authorized
+absolute regular-file paths, cap the aggregate at 512 KiB, and transfer base64
+through File/DataTransfer. Existing files require explicit replacement.
+
+Capability reports derive from the responding backend family, not permission
+status. Zen has isolated USER_SCRIPT DOM support, not full CDP/network/screenshots
+or native choosers. Profiles JSON preserves unresolved connected hosts with
+instance ids; MCP can enumerate hosts and pin a route/task session once before
+browser work. Server-start selectors remain pinned. Unselected legacy CLI routing
+through active.json remains available; agent skill guidance requires explicit
+routes. Parameters and limits: [agent commands](../skills/open-browser-use/references/agent-commands.md).

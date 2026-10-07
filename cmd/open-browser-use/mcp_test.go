@@ -54,7 +54,7 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 			t.Fatalf("expected tool %q to include inputSchema, got %#v", name, tool)
 		}
 	}
-	for _, name := range []string{"user_tabs", "open_tab", "cdp", "run_action_plan"} {
+	for _, name := range []string{"user_tabs", "open_tab", "cdp", "run_action_plan", "connected_profiles", "select_browser", "capabilities", "snapshot", "evaluate", "click", "fill", "wait_for", "set_input_files"} {
 		if !names[name] {
 			t.Fatalf("expected MCP tools to include %q, got %#v", name, names)
 		}

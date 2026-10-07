@@ -4,6 +4,7 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-10-07 | Zen Agent Commands | CLI/MCP provide snapshots, guarded form drafts, readiness waits, serialized evaluation, and file-input uploads in Chrome and Zen. | Shared host helpers reuse the installed extension, surface JavaScript/attach errors, cap uploads at 512 KiB, preserve unexpected drafts and selected files, expose backend capabilities and one-time MCP route selection, and retain unresolved hosts in profiles JSON. |
 | 2026-07-13 | Zen Browser Support | Zen 用户可以安装专用 Firefox WebExtension、注册 native host、发现/选择 Zen profile，并复用现有 CLI/SDK 读取网页、填写表单以及完成 tab、history、navigation、page info 和 session 工作流。 | 新增 Zen XPI 打包/release artifact、Firefox `allowed_extensions` native manifest、Zen 多平台 profile discovery、Firefox native launch detection 和核心 CDP compatibility adapter；动态页面求值改用隔离的 Firefox `USER_SCRIPT` world，并在 popup 提供一次性的全局 page interaction 权限授权与状态；明确 arbitrary CDP 与 file chooser 注入限制。 |
 | 2026-07-04 | Session Cleanup After Verify | 验收/验证结束后 Chrome 顶部的"已开始调试此浏览器"横幅会随之消失，不再一直挂着；agent 也更倾向复用用户已经打开的本地开发页而不是每次新开一个。 | 发布 `0.1.41` patch 版本，`finalize_tabs` 现在对保留的 `handoff` 标签页也断开 debugger（保留标签页与任务分组，下一轮 CDP 调用再 lazy 重连），从根源清掉调试横幅；`skills/open-browser-use` 补充"验证/验收本地改动前先从 `user-tabs` 复用已打开的 `localhost`/`127.0.0.1` 开发页"的指导；新增 `finalize-detach` 回归测试并接入 `node --test` CI。 |
 

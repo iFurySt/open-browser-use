@@ -193,7 +193,7 @@ func mcpErrorResponse(id any, code int, message string) map[string]any {
 }
 
 func mcpTools() []mcpTool {
-	return []mcpTool{
+	tools := []mcpTool{
 		{
 			Name:        "ping",
 			Title:       "Ping Browser Backend",
@@ -376,6 +376,7 @@ func mcpTools() []mcpTool {
 			}, []string{"script"}),
 		},
 	}
+	return append(tools, domMCPTools()...)
 }
 
 func emptyObjectSchema() map[string]any {
@@ -511,7 +512,7 @@ func (server *mcpServer) runTool(name string, arguments map[string]any) (any, er
 		}
 		return server.runner.run(script)
 	default:
-		return nil, fmt.Errorf("unknown tool: %s", name)
+		return server.runDOMTool(name, arguments)
 	}
 }
 

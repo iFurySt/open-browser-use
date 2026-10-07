@@ -87,6 +87,7 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 	root.Flags().BoolVarP(&showVersion, "version", "v", false, "print version")
+	root.AddCommand(newDOMCommands()...)
 	root.AddCommand(
 		newHostCommand(),
 		newSetupCommand(),
@@ -1308,7 +1309,7 @@ func addSocketFlags(cmd *cobra.Command, options *socketOptions) {
 	cmd.Flags().DurationVar(&options.timeout, "timeout", 10*time.Second, "request timeout")
 	cmd.Flags().StringVar(&options.sessionID, "session-id", options.sessionID, "browser session id used for tab grouping and cleanup")
 	cmd.Flags().StringVar(&options.browser, "browser", "", "browser selector (chrome, chrome-beta, zen, bitbrowser, or display name)")
-	cmd.Flags().StringVar(&options.profile, "profile", "", "Chrome profile selector (directory name like \"Default\" / \"Profile 1\" or display name like \"Eva\")")
+	cmd.Flags().StringVar(&options.profile, "profile", "", "browser profile directory, display name, or extension instance id")
 }
 
 func newCallCommand() *cobra.Command {
@@ -1897,6 +1898,20 @@ func renderProfilesList(writer io.Writer, profiles []installedChromeProfile, con
 			}
 			rows = append(rows, r)
 		}
+		if showConnected {
+			for _, info := range connected {
+				found := false
+				for _, profile := range profiles {
+					if info.Target != "" && info.Target == profile.Target {
+						found = true
+						break
+					}
+				}
+				if !found {
+					rows = append(rows, row{Browser: info.Browser, BrowserName: info.BrowserName, Target: info.Target, Directory: info.Directory, DisplayName: info.DisplayName, ExtensionID: info.ExtensionID, Connected: true, SocketPath: info.SocketPath, InstanceID: info.InstanceID})
+				}
+			}
+		}
 		payload, err := json.MarshalIndent(rows, "", "  ")
 		if err != nil {
 			return err
@@ -1982,10 +1997,11 @@ func (profile installedChromeProfile) browserLabel() string {
 }
 
 type actionRunner struct {
-	options      socketOptions
-	sessionID    string
-	turnID       string
-	currentTabID int
+	options            socketOptions
+	sessionID          string
+	turnID             string
+	currentTabID       int
+	browserWorkStarted bool
 }
 
 type actionRunOutput struct {
@@ -2148,6 +2164,9 @@ func (runner *actionRunner) runNavigateAction(args []string) (map[string]any, in
 }
 
 func (runner *actionRunner) runWaitLoadAction(args []string) (map[string]any, int, error) {
+	if runner.options.timeout <= 0 || runner.options.timeout > 60*time.Second {
+		return nil, 0, errors.New("wait timeout must be positive and at most 60s")
+	}
 	tabID, err := tabIDArgOrCurrent(args, runner.currentTabID)
 	if err != nil {
 		return nil, 0, err
@@ -2182,6 +2201,9 @@ func (runner *actionRunner) runWaitLoadAction(args []string) (map[string]any, in
 		if err != nil {
 			return nil, 0, err
 		}
+		if err := evaluationResponseError(response); err != nil {
+			return nil, tabID, err
+		}
 		readyState := runtimeEvaluateString(response)
 		if readyState == "complete" || (state == "domcontentloaded" && readyState == "interactive") {
 			return map[string]any{"result": map[string]any{"readyState": readyState}}, tabID, nil
@@ -2209,6 +2231,9 @@ func (runner *actionRunner) runPageInfoAction(args []string) (map[string]any, in
 			"returnByValue": true,
 		},
 	})
+	if err == nil {
+		err = evaluationResponseError(response)
+	}
 	return response, tabID, err
 }
 
@@ -2335,11 +2360,19 @@ func (runner *actionRunner) runCallAction(args []string) (map[string]any, int, e
 }
 
 func (runner *actionRunner) attach(tabID int) error {
-	_, _, err := runner.invoke("attach", map[string]any{"tabId": tabID})
+	response, _, err := runner.invoke("attach", map[string]any{"tabId": tabID})
+	if err == nil {
+		err = evaluationResponseError(response)
+	}
 	return err
 }
 
 func (runner *actionRunner) invoke(method string, params map[string]any) (map[string]any, int, error) {
+	switch method {
+	case "ping", "getInfo", "getTabs", "getUserTabs":
+	default:
+		runner.browserWorkStarted = true
+	}
 	if params == nil {
 		params = map[string]any{}
 	}
@@ -2806,7 +2839,7 @@ func pickSocketForProfile(socketDir string, browserSelector string, profileSelec
 
 func profileMatchHint(seen []connectedProfileInfo) string {
 	if len(seen) == 0 {
-		return "no Chrome host was reachable; open Chrome on the desired profile and retry"
+		return "no browser host was reachable; open the selected browser/profile and retry"
 	}
 	labels := make([]string, 0, len(seen))
 	for _, info := range seen {

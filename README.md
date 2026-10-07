@@ -78,8 +78,12 @@ prompting for each site.
 Zen is Firefox-based, so it does not expose Chrome's extension debugger API.
 The Zen route supports tabs, history, navigation, page information, JavaScript
 evaluation, downloads, clipboard helpers, cursor movement, and session cleanup.
-Arbitrary Chrome-only CDP methods and local file chooser injection are not
-available.
+Arbitrary Chrome-only CDP methods and native file chooser injection are not
+available. The host provides `snapshot`, `evaluate`, `click`, guarded `fill`,
+`wait-for`, and `set-input-files` commands for both routes. Zen file-input uploads
+use synthetic File/DataTransfer events and accept at most 512 KiB combined; no
+form submission is invoked. Run `capabilities` on the selected route and see the
+[command parameters](skills/open-browser-use/references/agent-commands.md).
 
 ### Use It
 
