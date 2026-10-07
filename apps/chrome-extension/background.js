@@ -1,14 +1,40 @@
 const NATIVE_HOST_NAME = "com.ifuryst.open_browser_use.extension";
 const NATIVE_HOST_STATUS_KEY = "OPEN_BROWSER_USE_NATIVE_HOST_STATUS";
 const SESSION_STATE_KEY = "OPEN_BROWSER_USE_SESSION_STATE";
+const WEBMCP_ENABLED_KEY = "OPEN_BROWSER_USE_WEBMCP_ENABLED";
 const RECONNECT_ALARM_NAME = "open-browser-use-native-reconnect";
 const HEARTBEAT_ALARM_NAME = "open-browser-use-heartbeat";
 const DEFAULT_CDP_TIMEOUT_MS = 10_000;
+const DEFAULT_WEBMCP_TIMEOUT_MS = 10_000;
+const DEFAULT_WEBMCP_LIST_TIMEOUT_MS = 5_000;
+const WEBMCP_TIMEOUT_GRACE_MS = 1_500;
 const CURSOR_ARRIVAL_TIMEOUT_MS = 1_000;
 const MAX_USER_TABS = 1000;
 const DEFAULT_SESSION_GROUP_TITLE = "Task - OBU";
 const DELIVERABLE_GROUP_TITLE = "✅ Open Browser Use";
 const LEGACY_SESSION_GROUP_TITLE_PATTERN = /^Open Browser Use [0-9a-f]{8}$/i;
+const WEBMCP_CAPABILITY = {
+  id: "webmcp",
+  description: "Fetch page-defined WebMCP tools bound to the current document and invoke them."
+};
+const WEBMCP_CONTENT_SCRIPTS = [
+  {
+    id: "open-browser-use-webmcp-main",
+    js: ["content-webmcp-main.js"],
+    matches: ["<all_urls>"],
+    persistAcrossSessions: false,
+    runAt: "document_start",
+    world: "MAIN"
+  },
+  {
+    id: "open-browser-use-webmcp-bridge",
+    js: ["content-webmcp-bridge.js"],
+    matches: ["<all_urls>"],
+    persistAcrossSessions: false,
+    runAt: "document_start",
+    world: "ISOLATED"
+  }
+];
 const HAS_TAB_GROUPS = Boolean(chrome.tabGroups && chrome.tabs.group);
 const HAS_CHROME_DEBUGGER = Boolean(chrome.debugger);
 
@@ -214,9 +240,68 @@ class SessionStore {
   }
 }
 
-class BrowserBackend {
+class WebMcpGate {
   constructor() {
+    this.enabledValue = false;
+    this.applyQueue = Promise.resolve(false);
+    this.ready = this.refresh();
+    chrome.storage.onChanged?.addListener((changes, areaName) => {
+      if (areaName !== "local" || !Object.hasOwn(changes, WEBMCP_ENABLED_KEY)) {
+        return;
+      }
+      const enabled = changes[WEBMCP_ENABLED_KEY]?.newValue !== false;
+      this.ready = this.queueApply(enabled);
+    });
+  }
+
+  async enabled() {
+    await this.ready;
+    return this.enabledValue;
+  }
+
+  async refresh() {
+    try {
+      const stored = await chrome.storage.local.get(WEBMCP_ENABLED_KEY);
+      return await this.queueApply(stored[WEBMCP_ENABLED_KEY] !== false);
+    } catch {
+      this.enabledValue = false;
+      return false;
+    }
+  }
+
+  queueApply(enabled) {
+    this.applyQueue = this.applyQueue
+      .catch(() => false)
+      .then(async () => await this.apply(enabled));
+    return this.applyQueue;
+  }
+
+  async apply(enabled) {
+    if (
+      typeof chrome.scripting?.getRegisteredContentScripts !== "function" ||
+      typeof chrome.scripting?.registerContentScripts !== "function" ||
+      typeof chrome.scripting?.unregisterContentScripts !== "function"
+    ) {
+      this.enabledValue = false;
+      return false;
+    }
+    const ids = WEBMCP_CONTENT_SCRIPTS.map((script) => script.id);
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids });
+    if (registered.length > 0) {
+      await chrome.scripting.unregisterContentScripts({ ids: registered.map((script) => script.id) });
+    }
+    if (enabled) {
+      await chrome.scripting.registerContentScripts(WEBMCP_CONTENT_SCRIPTS);
+    }
+    this.enabledValue = enabled;
+    return enabled;
+  }
+}
+
+class BrowserBackend {
+  constructor({ webMcpGate = null } = {}) {
     this.store = new SessionStore();
+    this.webMcpGate = webMcpGate;
     this.attachedTabs = new Set();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
@@ -246,14 +331,19 @@ class BrowserBackend {
       extensionInstanceId = crypto.randomUUID();
       await chrome.storage.local.set({ extensionInstanceId });
     }
+    const webMcpEnabled = (await this.webMcpGate?.enabled?.()) === true;
     return {
       name: HAS_CHROME_DEBUGGER ? "Open Browser Use Chrome" : "Open Browser Use Firefox",
       version: chrome.runtime.getManifest().version,
       type: "extension",
+      capabilities: {
+        tab: webMcpEnabled ? [WEBMCP_CAPABILITY] : []
+      },
       metadata: {
         extensionId: chrome.runtime.id,
         extensionInstanceId,
-        extensionOrigin: chrome.runtime.getURL(""),
+        extensionOrigin:
+          typeof chrome.runtime.getURL === "function" ? chrome.runtime.getURL("") : undefined,
         nativeHostName: NATIVE_HOST_NAME
       }
     };
@@ -484,6 +574,59 @@ class BrowserBackend {
       }
       return await chrome.debugger.sendCommand(target, params.method, params.commandParams ?? {});
     });
+  }
+
+  async webmcp_list_tools(params) {
+    const tabId = requireWebMcpTabId(params, "webmcp_list_tools");
+    await this.requireSessionTab({ ...params, tabId }, "webmcp_list_tools");
+    await this.requireWebMcpEnabled();
+    const result = await this.sendWebMcpRequest(
+      tabId,
+      { action: "list" },
+      DEFAULT_WEBMCP_LIST_TIMEOUT_MS + WEBMCP_TIMEOUT_GRACE_MS
+    );
+    if (!result || typeof result !== "object" || !Array.isArray(result.tools)) {
+      throw new Error("WebMCP list response did not include tools");
+    }
+    return result;
+  }
+
+  async webmcp_invoke_tool(params) {
+    const tabId = requireWebMcpTabId(params, "webmcp_invoke_tool");
+    await this.requireSessionTab({ ...params, tabId }, "webmcp_invoke_tool");
+    await this.requireWebMcpEnabled();
+    const toolName = requireNonEmptyString(params.tool_name, "webmcp_invoke_tool requires tool_name");
+    const registrationId = requireNonEmptyString(
+      params.registration_id,
+      "webmcp_invoke_tool requires registration_id"
+    );
+    if (!Object.hasOwn(params, "input")) {
+      throw new Error("webmcp_invoke_tool requires input");
+    }
+    const timeoutMs = optionalPositiveInteger(
+      params.timeout_ms,
+      DEFAULT_WEBMCP_TIMEOUT_MS,
+      "webmcp_invoke_tool timeout_ms"
+    );
+    const result = await this.sendWebMcpRequest(
+      tabId,
+      {
+        action: "invoke",
+        tool_name: toolName.trim(),
+        ...(typeof params.tool_description === "string"
+          ? { tool_description: params.tool_description }
+          : {}),
+        ...(typeof params.tool_title === "string" ? { tool_title: params.tool_title } : {}),
+        registration_id: registrationId.trim(),
+        input: params.input,
+        timeout_ms: timeoutMs
+      },
+      timeoutMs + WEBMCP_TIMEOUT_GRACE_MS
+    );
+    if (!result || typeof result !== "object" || !Object.hasOwn(result, "result")) {
+      throw new Error("WebMCP invoke response did not include result");
+    }
+    return result;
   }
 
   async moveMouse(params) {
@@ -946,7 +1089,16 @@ class BrowserBackend {
   async ensureSessionGroup(sessionId, tabId, origin) {
     const session = await this.store.getSession(sessionId);
     if (!HAS_TAB_GROUPS) {
-      session.tabOrigins[String(tabId)] = origin;
+      const key = String(tabId);
+      // Reserve ownership before awaiting storage so concurrent claims cannot
+      // both succeed. Tab groups are only one browser's ownership mechanism.
+      for (const [ownerId, owner] of Object.entries(this.store.state.sessions)) {
+        if (ownerId !== sessionId && Object.hasOwn(owner.tabOrigins, key)) {
+          throw new Error(`Tab ${tabId} is already part of browser session ${ownerId}`);
+        }
+      }
+      // Reclaiming an agent-created tab must not change its cleanup disposition.
+      session.tabOrigins[key] ??= origin;
       await this.store.save();
       return;
     }
@@ -1158,6 +1310,66 @@ class BrowserBackend {
     }
   }
 
+  async requireWebMcpEnabled() {
+    if ((await this.webMcpGate?.enabled?.()) !== true) {
+      throw new Error("WebMCP capability is disabled");
+    }
+  }
+
+  async sendWebMcpRequest(tabId, request, timeoutMs) {
+    await this.ensureWebMcpContentScripts(tabId);
+    const response = await withWebMcpTimeout(timeoutMs, async () => {
+      return await chrome.tabs.sendMessage(tabId, {
+        type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
+        ...request
+      });
+    });
+    if (response?.ok !== true) {
+      throw new Error(
+        typeof response?.error === "string" ? response.error : "WebMCP page bridge request failed"
+      );
+    }
+    return response.result;
+  }
+
+  async ensureWebMcpContentScripts(tabId) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: "OPEN_BROWSER_USE_WEBMCP_PING"
+      });
+      if (response?.ok === true) {
+        return;
+      }
+    } catch {}
+
+    try {
+      await chrome.scripting.executeScript({
+        files: ["content-webmcp-main.js"],
+        target: { tabId },
+        world: "MAIN"
+      });
+      await chrome.scripting.executeScript({
+        files: ["content-webmcp-bridge.js"],
+        target: { tabId },
+        world: "ISOLATED"
+      });
+    } catch (error) {
+      throw new Error(
+        `Cannot inject WebMCP bridge into tab ${tabId}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: "OPEN_BROWSER_USE_WEBMCP_PING"
+      });
+      if (response?.ok === true) {
+        return;
+      }
+    } catch {}
+    throw new Error(`WebMCP bridge is unavailable in tab ${tabId}`);
+  }
+
   async publishCursorState(tabId) {
     if (!(await this.ensureCursorContentScript(null, tabId))) {
       return false;
@@ -1215,6 +1427,37 @@ function requireTabId(params, command) {
     throw new Error(`${command} requires an integer tabId`);
   }
   return params.tabId;
+}
+
+function requireWebMcpTabId(params, command) {
+  const candidate = params?.tabId ?? params?.tab_id;
+  if (Number.isInteger(candidate) && candidate >= 0) {
+    return candidate;
+  }
+  if (typeof candidate === "string" && /^\d+$/.test(candidate)) {
+    const parsed = Number(candidate);
+    if (Number.isSafeInteger(parsed)) {
+      return parsed;
+    }
+  }
+  throw new Error(`${command} requires integer tabId`);
+}
+
+function requireNonEmptyString(value, message) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(message);
+  }
+  return value;
+}
+
+function optionalPositiveInteger(value, fallback, field) {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${field} must be a positive integer`);
+  }
+  return value;
 }
 
 async function createBackgroundTab() {
@@ -1315,6 +1558,22 @@ async function withTimeout(timeoutMs, fn) {
   }
 }
 
+async function withWebMcpTimeout(timeoutMs, fn) {
+  let timeout;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Timed out after ${timeoutMs}ms waiting for WebMCP page bridge.`));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function startHeartbeat(peer, backend) {
   chrome.alarms.create(HEARTBEAT_ALARM_NAME, { periodInMinutes: 0.5 }).catch(() => {});
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -1332,7 +1591,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
-const backend = new BrowserBackend();
+const webMcpGate = new WebMcpGate();
+const backend = new BrowserBackend({ webMcpGate });
 const transport = new NativeTransport(NATIVE_HOST_NAME);
 const peer = new JsonRpcPeer(transport, backend);
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

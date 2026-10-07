@@ -230,6 +230,8 @@ Common Browser Use JSON-RPC methods:
 - `attach`
 - `detach`
 - `executeCdp`
+- `webmcp_list_tools`
+- `webmcp_invoke_tool`
 - `moveMouse`
 - `waitForFileChooser`
 - `setFileChooserFiles`
@@ -247,6 +249,70 @@ CLI unrestricted call:
 open-browser-use call --session-id "$OBU_SESSION_ID" --method getInfo --params '{}'
 open-browser-use call --session-id "$OBU_SESSION_ID" --method executeCdp --params '{"target":{"tabId":123},"method":"Runtime.evaluate","commandParams":{"expression":"document.title"}}'
 ```
+
+### WebMCP page tools
+
+The Chrome route can discover and invoke tools registered by the current
+top-level page through `document.modelContext`. If the browser does not expose
+that API natively, the MAIN-world content script installs a small compatible
+shim at `document_start` so page code can still call `registerTool`. Check
+`getInfo` first. The tab capability list contains `{"id":"webmcp",...}` only
+when the extension WebMCP gate and content-script registration are active.
+
+The target tab must already belong to the current Open Browser Use session.
+Create it with `open-tab`, or list user tabs and claim the chosen tab first.
+
+List the current tool snapshot:
+
+```sh
+open-browser-use call \
+  --session-id "$OBU_SESSION_ID" \
+  --method webmcp_list_tools \
+  --params '{"tabId":123}'
+```
+
+The result has this shape:
+
+```json
+{
+  "tools": [
+    {
+      "name": "book_table",
+      "registration_id": "opaque-snapshot-id",
+      "title": "Book table",
+      "description": "Book a table.",
+      "input_schema": {
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "untrustedContentHint": true
+      },
+      "origin": "https://example.com",
+      "pageUrl": "https://example.com/reservations"
+    }
+  ]
+}
+```
+
+Invoke a tool from that exact snapshot:
+
+```sh
+open-browser-use call \
+  --session-id "$OBU_SESSION_ID" \
+  --method webmcp_invoke_tool \
+  --params '{"tabId":123,"tool_name":"book_table","registration_id":"opaque-snapshot-id","input":{"partySize":4},"timeout_ms":10000}'
+```
+
+The response is `{"result":<json-value>}`. Treat `registration_id` as opaque.
+List tools again after a `toolchange`, navigation, or stale-registration error.
+Running `webmcp_list_tools` creates a new snapshot and invalidates IDs from the
+previous snapshot.
+
+The command names and result field names follow the WebMCP page tool
+specification. Open Browser Use keeps its existing transport envelope with
+integer Chrome `tabId`, `session_id`, and `turn_id`. It does not add a second
+`browser_id` routing layer.
 
 CLI action plan:
 

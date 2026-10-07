@@ -1,10 +1,23 @@
 # 功能发布记录
 
-## 2026-07
+## 2026-10
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
 | 2026-10-07 | Zen Agent Commands | CLI/MCP provide snapshots, guarded form drafts, readiness waits, serialized evaluation, and file-input uploads in Chrome and Zen. | Shared host helpers reuse the installed extension, surface JavaScript/attach errors, cap uploads at 512 KiB, preserve unexpected drafts and selected files, expose backend capabilities and one-time MCP route selection, and retain unresolved hosts in profiles JSON. |
+
+## 2026-09
+
+| 日期 | 功能域 | 用户价值 | 变更摘要 |
+| --- | --- | --- | --- |
+| 2026-09-03 | WebMCP Page Tools | Agent 可以在已经 claim 的真实 Chrome 页面中发现并调用站点通过 `document.modelContext` 注册的 WebMCP 工具，不需要退回通用 DOM 自动化。 | 新增 `webmcp_list_tools` / `webmcp_invoke_tool` JSON-RPC 能力、`getInfo` 的 `webmcp` tab capability、MAIN/ISOLATED 双层 bridge，以及浏览器没有原生 `document.modelContext` 时的 page-facing shim；同时加入 snapshot `registration_id` 校验、MCP-B 5.1.0 fixture 和 Node 回归测试；继续复用现有 session/tab ownership，不包含新的 leases 或 per-site allowlist UI。 |
+| 2026-09-03 | CLI JSON-RPC Reliability | Agent 长时间通过 CLI 或 MCP 操作浏览器时，周期性 heartbeat 不再偶发顶替截图、CDP 或其他命令的真实结果。 | 发布 `0.1.42` patch 版本，CLI 请求读取现在按 request id 等待对应响应，并跳过其间插入的 notification；新增 heartbeat 先于响应到达的回归测试。 |
+
+## 2026-07
+
+| 日期 | 功能域 | 用户价值 | 变更摘要 |
+| --- | --- | --- | --- |
+| 2026-09-08 | Zen Compatibility Fixes | Windows Chrome/Zen 注册文件不再互相覆盖，无 tab groups 的会话不能重复占用同一标签页。 | 分离 Firefox manifest 文件，补 ownership 并发/恢复/清理测试和 Windows 定向 CI；明确临时 XPI 的重启限制。 |
 | 2026-07-13 | Zen Browser Support | Zen 用户可以安装专用 Firefox WebExtension、注册 native host、发现/选择 Zen profile，并复用现有 CLI/SDK 读取网页、填写表单以及完成 tab、history、navigation、page info 和 session 工作流。 | 新增 Zen XPI 打包/release artifact、Firefox `allowed_extensions` native manifest、Zen 多平台 profile discovery、Firefox native launch detection 和核心 CDP compatibility adapter；动态页面求值改用隔离的 Firefox `USER_SCRIPT` world，并在 popup 提供一次性的全局 page interaction 权限授权与状态；明确 arbitrary CDP 与 file chooser 注入限制。 |
 | 2026-07-04 | Session Cleanup After Verify | 验收/验证结束后 Chrome 顶部的"已开始调试此浏览器"横幅会随之消失，不再一直挂着；agent 也更倾向复用用户已经打开的本地开发页而不是每次新开一个。 | 发布 `0.1.41` patch 版本，`finalize_tabs` 现在对保留的 `handoff` 标签页也断开 debugger（保留标签页与任务分组，下一轮 CDP 调用再 lazy 重连），从根源清掉调试横幅；`skills/open-browser-use` 补充"验证/验收本地改动前先从 `user-tabs` 复用已打开的 `localhost`/`127.0.0.1` 开发页"的指导；新增 `finalize-detach` 回归测试并接入 `node --test` CI。 |
 

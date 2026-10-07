@@ -13,7 +13,7 @@ Read this reference when the user asks to install, verify, repair, or explain Op
 Use one of the supported package routes:
 
 ```sh
-npm install -g open-browser-use
+pnpm add -g open-browser-use
 ```
 
 ```sh
@@ -51,12 +51,22 @@ open-browser-use setup --browser chrome-beta
 For Zen Browser, download the matching
 `open-browser-use-zen-extension-<version>.xpi` from GitHub Releases. Open
 `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and
-select the XPI, then register Firefox native messaging:
+select the XPI. This is an experimental, unsigned temporary installation: Zen
+removes the add-on at restart, so load it again before using the CLI. Register
+Firefox native messaging:
 
 ```sh
 open-browser-use install-manifest --browser zen
 open-browser-use profiles --connected
 ```
+
+Open the extension popup and enable Page Interaction (`userScripts`); the
+current ordinary tab reloads once. Check permission again after reloading the
+temporary add-on. On Windows the Firefox manifest uses a separate
+`NativeMessagingHosts/firefox/` directory; Chrome keeps its existing path. If an
+earlier experimental installation overwrote Chrome registration, rerun both
+`install-manifest --browser chrome` and `install-manifest --browser zen` with
+the fixed CLI.
 
 The Zen route supports the normal tab/history/session commands plus the core
 `Page.navigate`, `Page.reload`, `Page.close`, `Runtime.evaluate`, and

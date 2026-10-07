@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.41"
+const version = "0.1.42"
 const defaultChromeExtensionID = "bgjoihaepiejlfjinojjfgokghnodnhd"
 const defaultFirefoxExtensionID = "open-browser-use@ifuryst.com"
 const defaultCLISessionID = "obu-cli"
@@ -348,11 +348,11 @@ func installNativeManifestForBrowser(extensionID string, binaryPath string, outp
 		return "", err
 	}
 	if outputPath == "" && runtime.GOOS == "windows" {
-		registryVendor := `Google\Chrome`
-		if family, familyErr := browserFamilyForSelector(browserSelector); familyErr == nil && family == "firefox" {
-			registryVendor = `Mozilla`
+		family, err := browserFamilyForSelector(browserSelector)
+		if err != nil {
+			return "", err
 		}
-		key := `HKCU\Software\` + registryVendor + `\NativeMessagingHosts\` + host.NativeHostName
+		key := windowsNativeHostRegistryKey(family)
 		if err := regAddDefaultString(key, path); err != nil {
 			return "", fmt.Errorf("failed to register native messaging host %q: %w", key, err)
 		}
@@ -2575,20 +2575,31 @@ func invokeWithProfile(socketPath string, socketDir string, browser string, prof
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	applySessionDefaults(params, defaultCLISessionID)
+	requestID := "cli-1"
 	request := map[string]any{
 		"jsonrpc": "2.0",
-		"id":      "cli-1",
+		"id":      requestID,
 		"method":  method,
 		"params":  params,
 	}
 	if err := wire.WriteJSON(conn, request); err != nil {
 		return nil, err
 	}
-	var response map[string]any
-	if err := wire.ReadJSON(conn, &response); err != nil {
-		return nil, err
+	return readResponseForID(conn, requestID)
+}
+
+func readResponseForID(conn net.Conn, requestID string) (map[string]any, error) {
+	for {
+		var response map[string]any
+		if err := wire.ReadJSON(conn, &response); err != nil {
+			return nil, err
+		}
+		if responseID, ok := response["id"].(string); ok && responseID == requestID {
+			return response, nil
+		}
+		// JSON-RPC notifications and unrelated responses may be interleaved with
+		// the response for this request. Keep reading until its id arrives.
 	}
-	return response, nil
 }
 
 func applySessionDefaults(params map[string]any, sessionID string) {
@@ -2720,16 +2731,7 @@ func getInfoOverConn(conn net.Conn, timeout time.Duration) (map[string]any, erro
 	if err := wire.WriteJSON(conn, req); err != nil {
 		return nil, err
 	}
-	for {
-		var resp map[string]any
-		if err := wire.ReadJSON(conn, &resp); err != nil {
-			return nil, err
-		}
-		if id, ok := resp["id"].(string); ok && id == wantID {
-			return resp, nil
-		}
-		// skip notifications / stale responses while waiting for our id
-	}
+	return readResponseForID(conn, wantID)
 }
 
 func connectedProfileFromInfo(socketPath string, payload map[string]any) connectedProfileInfo {
@@ -3199,10 +3201,28 @@ func defaultNativeHostManifestPathForBrowser(browserSelector string) (string, er
 		if strings.TrimSpace(localAppData) == "" {
 			localAppData = filepath.Join(home, "AppData", "Local")
 		}
-		return filepath.Join(localAppData, "OpenBrowserUse", "NativeMessagingHosts", filename), nil
+		return windowsNativeHostManifestPath(localAppData, family), nil
 	default:
 		return "", fmt.Errorf("default manifest install path is not implemented for %s; pass --output", runtime.GOOS)
 	}
+}
+
+// Keep the Chromium path stable for existing registrations. Firefox manifests
+// have a different allowlist schema and must never overwrite that file.
+func windowsNativeHostManifestPath(localAppData string, family string) string {
+	dir := filepath.Join(localAppData, "OpenBrowserUse", "NativeMessagingHosts")
+	if family == "firefox" {
+		dir = filepath.Join(dir, "firefox")
+	}
+	return filepath.Join(dir, host.NativeHostName+".json")
+}
+
+func windowsNativeHostRegistryKey(family string) string {
+	vendor := `Google\Chrome`
+	if family == "firefox" {
+		vendor = `Mozilla`
+	}
+	return `HKCU\Software\` + vendor + `\NativeMessagingHosts\` + host.NativeHostName
 }
 
 func browserFamilyForSelector(selector string) (string, error) {

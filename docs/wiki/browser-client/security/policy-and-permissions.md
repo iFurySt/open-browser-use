@@ -62,3 +62,27 @@ Some commands are explicitly treated as not needing an origin:
 
 `navigate_tab_url` is checked against the target URL. Most other tab-scoped
 commands check the current tab URL before dispatch.
+
+## WebMCP Page Tools
+
+The Open Browser Use Chrome extension can expose page-defined WebMCP tools when
+its WebMCP gate is active. This path has these boundaries:
+
+- `webmcp_list_tools` and `webmcp_invoke_tool` only accept a tab that belongs to
+  the active Open Browser Use session.
+- The MAIN-world script uses a native `document.modelContext` when one exists.
+  When the browser does not provide it, the script installs a top-level
+  page-facing shim before site JavaScript runs so sites can call
+  `registerTool`. The shim keeps registrations in that document only and
+  supports AbortSignal unregister plus `toolchange`. The ISOLATED-world script
+  only relays WebMCP request and response data to the extension.
+- Content scripts run in the top-level document only. This implementation does
+  not discover WebMCP tools from iframes.
+- Each list call creates opaque registration IDs. Invocation requires the exact
+  registration ID and tool name from that snapshot. A `toolchange` invalidates
+  the snapshot.
+- WebMCP tools are site-defined code running in the live signed-in page. Treat
+  their descriptions, schemas, and results as untrusted site content.
+
+This WebMCP slice does not add a per-site allowlist or blocklist UI. That policy
+surface remains separate from the page bridge.

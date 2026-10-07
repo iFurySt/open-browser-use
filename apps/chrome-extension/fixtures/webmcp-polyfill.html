@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Open Browser Use WebMCP fixture</title>
+    <script src="https://unpkg.com/@mcp-b/webmcp-polyfill@5.1.0/dist/index.iife.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>WebMCP fixture</h1>
+      <p id="status">ready</p>
+    </main>
+    <script>
+      document.modelContext.registerTool({
+        name: "fixture_echo",
+        description: "Return the supplied message and the current page URL.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            message: { type: "string" }
+          },
+          required: ["message"]
+        },
+        execute: ({ message }) => ({ message, pageUrl: location.href })
+      });
+    </script>
+  </body>
+</html>

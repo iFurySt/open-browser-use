@@ -53,10 +53,12 @@ Finalization is the last browser action. Finalize the same explicit route/sessio
 - Keep `status: "handoff"` when work awaits login, input, approval, or another later step.
 - Omit temporary fixtures, research, duplicate, blank, and error tabs. Claim and reuse matching kept tabs on a related follow-up.
 
-Zen tracks session membership without Chrome tab groups; absence of a visual group does not imply missing ownership.
+Zen tracks session membership without Chrome tab groups; absence of a visual group does not imply missing ownership. A temporary unsigned XPI disappears on browser restart; reload it and check page-interaction permission if needed.
 
 ## Other interfaces and troubleshooting
 
 `run -c/--file` and MCP `run_action_plan` execute the existing line-oriented action surface with a shared turn and current tab. Its `page-info` and `wait-load` actions also have direct CLI commands now. Use focused CLI/MCP calls for the new DOM helpers; do not assume every direct subcommand is a line-runner action.
+
+For Chrome page-provided WebMCP tools, inspect `info` for the `webmcp` capability, list tools before invoking an authorized one, and use the returned registration id. The installed Zen backend does not offer this Chrome bridge. Exact wire parameters are in [sdk-and-protocol.md](references/sdk-and-protocol.md).
 
 Use SDKs for event subscriptions, downloads, and larger workflows; raw `cdp`/`call` only when no focused helper fits. See [sdk-and-protocol.md](references/sdk-and-protocol.md). For socket or permission failures, read [troubleshooting.md](references/troubleshooting.md). Preserve stable native-host manifest paths and existing browser installs during repairs.
