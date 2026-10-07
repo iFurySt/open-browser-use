@@ -4,6 +4,7 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-10-07 | Zen Screenshots | Agents can capture managed Zen tabs as PNG/JPEG, clips or full pages through CLI/MCP. | Added Firefox Page.captureScreenshot and CSS layout metrics, capability discovery for installed versions, MCP image output, protected local files, parameter/size validation, and isolated Zen runtime smoke coverage. |
 | 2026-10-07 | Zen Agent Commands | CLI/MCP provide snapshots, guarded form drafts, readiness waits, serialized evaluation, and file-input uploads in Chrome and Zen. | Shared host helpers reuse the installed extension, surface JavaScript/attach errors, cap uploads at 512 KiB, preserve unexpected drafts and selected files, expose backend capabilities and one-time MCP route selection, and retain unresolved hosts in profiles JSON. |
 
 ## 2026-09

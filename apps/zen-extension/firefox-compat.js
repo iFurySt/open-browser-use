@@ -215,6 +215,20 @@ async function executeFirefoxCommand(browserApi, target, method, commandParams) 
       }
       await browserApi.tabs.remove(tabId);
       return {};
+    case "Page.captureScreenshot":
+      return captureFirefoxScreenshot(browserApi, tabId, commandParams);
+    case "Page.getLayoutMetrics": {
+      if (!Number.isInteger(tabId) || tabId <= 0) throw new Error("Page.getLayoutMetrics requires a tab target");
+      const response = await evaluateInTab(browserApi, tabId, `(() => {
+        const root = document.documentElement, body = document.body;
+        return {
+          cssLayoutViewport: {pageX: scrollX, pageY: scrollY, clientWidth: innerWidth, clientHeight: innerHeight},
+          cssContentSize: {x: 0, y: 0, width: Math.max(root.scrollWidth, body?.scrollWidth ?? 0, innerWidth), height: Math.max(root.scrollHeight, body?.scrollHeight ?? 0, innerHeight)}
+        };
+      })()`);
+      if (response.exceptionDetails) throw new Error(response.exceptionDetails.text);
+      return response.result.value;
+    }
     case "Runtime.evaluate":
       if (!Number.isInteger(tabId) || typeof commandParams.expression !== "string") {
         throw new Error("Runtime.evaluate requires a tab target and expression");
@@ -247,14 +261,51 @@ async function executeFirefoxCommand(browserApi, target, method, commandParams) 
     default:
       throw new Error(
         `CDP method ${String(method)} is not supported by Firefox-based browsers; ` +
-          "use Page.navigate, Page.reload, Page.close, Runtime.evaluate, or Target.getTargets"
+          "use Page.navigate, Page.reload, Page.close, Page.captureScreenshot, Page.getLayoutMetrics, Runtime.evaluate, or Target.getTargets"
       );
   }
+}
+
+async function captureFirefoxScreenshot(browserApi, tabId, params) {
+  if (!Number.isInteger(tabId) || tabId <= 0) throw new Error("Page.captureScreenshot requires a positive tab target");
+  if (typeof browserApi.tabs?.captureTab !== "function") throw new Error("This Firefox backend does not provide tabs.captureTab");
+  const supported = new Set(["format", "quality", "clip", "fromSurface", "captureBeyondViewport", "optimizeForSpeed"]);
+  for (const key of Object.keys(params)) if (!supported.has(key)) throw new Error(`Unsupported screenshot parameter: ${key}`);
+  const format = params.format ?? "png";
+  if (!["png", "jpeg"].includes(format)) throw new Error("Screenshot format must be png or jpeg");
+  if (params.fromSurface !== undefined && params.fromSurface !== true) throw new Error("fromSurface=false is not supported in Firefox");
+  if (params.optimizeForSpeed !== undefined && params.optimizeForSpeed !== false) throw new Error("optimizeForSpeed=true is not supported in Firefox");
+  if (params.captureBeyondViewport !== undefined && typeof params.captureBeyondViewport !== "boolean") throw new Error("captureBeyondViewport must be boolean");
+  const options = {format};
+  if (params.quality !== undefined) {
+    if (format !== "jpeg" || !Number.isInteger(params.quality) || params.quality < 0 || params.quality > 100) throw new Error("quality requires jpeg and an integer from 0 to 100");
+    options.quality = params.quality;
+  }
+  if (params.clip !== undefined) {
+    const clip = params.clip;
+    if (!clip || typeof clip !== "object" || Array.isArray(clip)) throw new Error("clip must be an object");
+    for (const key of Object.keys(clip)) if (!["x", "y", "width", "height", "scale"].includes(key)) throw new Error(`Unsupported clip parameter: ${key}`);
+    const scale = clip.scale ?? 1;
+    if (![clip.x, clip.y, clip.width, clip.height, scale].every(Number.isFinite) || clip.x < 0 || clip.y < 0 || clip.width <= 0 || clip.height <= 0 || scale <= 0 || scale > 4) throw new Error("Invalid screenshot clip or scale");
+    if (clip.width * scale > 16384 || clip.height * scale > 16384 || clip.width * clip.height * scale * scale > 33554432) throw new Error("Screenshot exceeds 16384 pixels per side or 32 megapixels");
+    // Firefox rect is page-relative. A clip can capture beyond the viewport;
+    // reject an explicit viewport restriction instead of silently ignoring it.
+    if (params.captureBeyondViewport === false) throw new Error("Firefox clipped capture requires captureBeyondViewport=true or omitted");
+    options.rect = {x: clip.x, y: clip.y, width: clip.width, height: clip.height};
+    options.scale = scale;
+  }
+  const dataURL = await browserApi.tabs.captureTab(tabId, options);
+  const prefix = `data:image/${format};base64,`;
+  if (typeof dataURL !== "string" || !dataURL.startsWith(prefix)) throw new Error("Firefox returned an invalid screenshot image");
+  const data = dataURL.slice(prefix.length);
+  if (!data || data.length > 44739244) throw new Error("Screenshot exceeds the 32 MiB image limit or is empty");
+  return {data};
 }
 
 globalThis.openBrowserUseFirefoxExecuteCommand = executeFirefoxCommand;
 globalThis.openBrowserUseFirefoxRemoteObject = remoteObject;
 globalThis.openBrowserUseFirefoxInitializeUserScripts = initializeFirefoxUserScripts;
+globalThis.openBrowserUseFirefoxScreenshotSupported = api => typeof api.tabs?.captureTab === "function";
 
 if (globalThis.chrome) {
   initializeFirefoxUserScripts(chrome);

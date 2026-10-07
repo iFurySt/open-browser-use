@@ -1,6 +1,6 @@
 ---
 name: open-browser-use
-description: Operate and troubleshoot Open Browser Use in real Chrome or Zen Browser profiles through its local CLI, MCP server, or SDKs. Use for user tab claiming, DOM snapshots, guarded form drafts, JavaScript evaluation, navigation, file inputs, downloads, clipboard, session cleanup, and the custom Zen/Firefox compatibility fork.
+description: Operate and troubleshoot Open Browser Use in real Chrome or Zen Browser profiles through its local CLI, MCP server, or SDKs. Use for user tab claiming, DOM snapshots, tab screenshots, guarded form drafts, JavaScript evaluation, navigation, file inputs, downloads, clipboard, session cleanup, and the custom Zen/Firefox compatibility fork.
 ---
 
 # Open Browser Use
@@ -26,7 +26,9 @@ For MCP, supply `--browser`, `--profile`, and `--session-id` at server startup. 
 - Use `click` only for an authorized action. A selector must match exactly one visible, enabled element. Reinspect after a rerender; selectors can become stale.
 - Prefer `--text-file`, `--fields-file`, or `--expression-file` for multiline content. Keep prose out of shell command substitution. MCP accepts literal strings and arrays directly.
 - Use `evaluate` for DOM checks or operations without a focused helper. It awaits promises, returns JSON data, and surfaces JavaScript exceptions. Zen evaluates in an isolated `USER_SCRIPT` world: DOM is accessible, page JavaScript globals are not.
-- DOM helpers address the main document with CSS selectors. They do not provide cross-origin iframe traversal, trusted input events, arbitrary shadow-root locators, or native screenshots.
+- DOM helpers address the main document with CSS selectors. They do not provide cross-origin iframe traversal, arbitrary shadow-root locators, or trusted input events.
+
+- Use `screenshot` for rendered tab images: PNG/JPEG, a page-relative clip, or a full page. The CLI requires an absolute `--output` path; MCP returns an image unless `output` is supplied. Existing files require explicit `overwrite`. Check `capabilities.cdpScreenshot` after reloading the updated Zen XPI. Full-page capture needs Zen page-interaction permission to read layout metrics.
 
 Read [agent-commands.md](references/agent-commands.md) for exact CLI/MCP parameters, result shapes, form guards, and upload limits. New DOM helpers are CLI/MCP conveniences, not new extension JSON-RPC methods or SDK methods.
 
@@ -40,7 +42,7 @@ Do not inspect unrelated cookies, credentials, session stores, or clipboard data
 
 ## Zen file inputs and Chrome-only features
 
-Zen does not support the intercepted native file chooser, network CDP methods, or CDP screenshots. Use `set-input-files` to assign authorized files to a visible input using `File`/`DataTransfer` events: at most 100 files and 512 KiB combined. Existing selections require explicit `--replace`. Larger files or sites requiring trusted file selection need user interaction in Zen. Chrome can use the native chooser flow documented in [sdk-and-protocol.md](references/sdk-and-protocol.md).
+Zen does not support the intercepted native file chooser or network CDP methods. The updated extension supports `Page.captureScreenshot` through Firefox `tabs.captureTab`; older installed extensions may still report `cdpScreenshot: false`. Use `set-input-files` to assign authorized files to a visible input using `File`/`DataTransfer` events: at most 100 files and 512 KiB combined. Existing selections require explicit `--replace`. Larger files or sites requiring trusted file selection need user interaction in Zen. Chrome can use the native chooser flow documented in [sdk-and-protocol.md](references/sdk-and-protocol.md).
 
 For unsupported operations, inspect `capabilities` and the error. Do not repeatedly try Chrome-only CDP calls in Zen or silently switch browsers.
 

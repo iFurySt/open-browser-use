@@ -212,3 +212,46 @@ test("supports current Zen through a registered Firefox user-script bridge", asy
     result: { type: "string", value: "Mail-Tester" }
   });
 });
+
+test("captures the specified tab without changing focus and maps JPEG clips", async () => {
+  const context = loadCompatibility();
+  const calls = [];
+  const api = {tabs:{captureTab:async (...args) => {calls.push(args); return 'data:image/jpeg;base64,aGVsbG8=';}}};
+  const result = await context.openBrowserUseFirefoxExecuteCommand(api,{tabId:7},'Page.captureScreenshot',{
+    format:'jpeg',quality:70,clip:{x:10,y:20,width:300,height:200,scale:2},captureBeyondViewport:true,fromSurface:true
+  });
+  assert.deepEqual(local(result),{data:'aGVsbG8='});
+  assert.deepEqual(local(calls),[[7,{format:'jpeg',quality:70,rect:{x:10,y:20,width:300,height:200},scale:2}]]);
+  assert.equal(context.openBrowserUseFirefoxScreenshotSupported(api),true);
+  assert.equal(context.openBrowserUseFirefoxScreenshotSupported({tabs:{}}),false);
+});
+
+test("rejects invalid or unsupported screenshot parameters before capture", async () => {
+  const context = loadCompatibility();
+  let captures = 0;
+  const api = {tabs:{captureTab:async () => {captures++; return 'data:image/png;base64,aGVsbG8=';}}};
+  for (const params of [
+    {format:'webp'}, {quality:80}, {format:'jpeg',quality:101}, {format:'jpeg',quality:1.5},
+    {clip:{x:0,y:0,width:0,height:20}}, {clip:{x:0,y:0,width:20,height:20,scale:0}},
+    {clip:{x:0,y:0,width:20000,height:20000}}, {clip:{x:0,y:0,width:20,height:20,scale:NaN}},
+    {clip:{x:0,y:0,width:20,height:20},captureBeyondViewport:false},
+    {clip:{x:0,y:0,width:20,height:20,unknown:true}}, {fromSurface:false}, {optimizeForSpeed:true}, {unknown:true}
+  ]) await assert.rejects(context.openBrowserUseFirefoxExecuteCommand(api,{tabId:7},'Page.captureScreenshot',params));
+  await assert.rejects(context.openBrowserUseFirefoxExecuteCommand(api,{},'Page.captureScreenshot',{}),/tab target/);
+  assert.equal(captures,0);
+  await assert.rejects(context.openBrowserUseFirefoxExecuteCommand({tabs:{captureTab:async()=>{throw Error('Permission denied')}}},{tabId:7},'Page.captureScreenshot',{}),/Permission denied/);
+  await assert.rejects(context.openBrowserUseFirefoxExecuteCommand({tabs:{captureTab:async()=>'data:text/plain;base64,AA=='}},{tabId:7},'Page.captureScreenshot',{}),/invalid screenshot/);
+});
+
+test("defaults to PNG and derives CSS layout metrics for full-page capture", async () => {
+  const context = loadCompatibility();
+  const calls = [];
+  const api = {
+    tabs:{captureTab:async(...args)=>{calls.push(args);return 'data:image/png;base64,AA==';}},
+    userScripts:{execute:async()=>[{result:{cssContentSize:{x:0,y:0,width:800,height:2400}}}]}
+  };
+  assert.deepEqual(local(await context.openBrowserUseFirefoxExecuteCommand(api,{tabId:7},'Page.captureScreenshot',{})),{data:'AA=='});
+  assert.deepEqual(local(calls),[[7,{format:'png'}]]);
+  assert.deepEqual(local(await context.openBrowserUseFirefoxExecuteCommand(api,{tabId:7},'Page.getLayoutMetrics',{})),{cssContentSize:{x:0,y:0,width:800,height:2400}});
+  await assert.rejects(context.openBrowserUseFirefoxExecuteCommand({}, {tabId:7},'Page.getLayoutMetrics',{}),/Enable page interaction/);
+});

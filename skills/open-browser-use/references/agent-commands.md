@@ -18,6 +18,7 @@ Use a returned tab id, not the illustrative `123`. Direct CLI tab commands requi
 | `profiles --connected --json` | `connected_profiles` | CLI returns installed rows plus unresolved connected hosts. MCP returns `{installed, connected}`. |
 | MCP only | `select_browser` | `browser` and/or `profile`; optional `session_id`. Only before tab work and only on an unselected server. An unresolved host can use its instance id as `profile`. |
 | `snapshot` | `snapshot` | CLI `--max-chars`, `--max-elements`; MCP `max_chars`, `max_elements`. Defaults 12000 and 80; ranges 1–50000 and 1–200. |
+| `screenshot` | `screenshot` | `--format` / `format` (png default, jpeg); JPEG-only `--quality` / `quality` 0–100; `--clip` JSON / `clip` object `{x,y,width,height,scale?}` or `--full-page` / `full_page`; CLI requires absolute `--output`, MCP optional `output`; explicit `--overwrite` / `overwrite` to replace files. |
 | `evaluate` | `evaluate` | CLI exactly one `--expression` or `--expression-file`; MCP `expression`. Return JSON-serializable data. |
 | `click` | `click` | `--selector` / `selector`: unique visible, enabled CSS target. May submit or mutate the site. |
 | `fill` | `fill` | CLI single-field flags or JSON fields array; MCP `fields` array. See below. |
@@ -57,6 +58,31 @@ The selector must identify one visible, enabled `input[type=file]`. A single-fil
 
 New DOM CLI commands return `{"result": <plain-data>}`. MCP wraps this same object in its `structuredContent` and text content. `snapshot` returns title, URL, readiness, text, element metadata/CSS selectors, and truncation flags. It omits field values and hidden elements. `wait-for` returns `{matched:true,url}` on success and errors on timeout or JavaScript failure. `evaluate` awaits promises, reports exceptions, and returns null for JavaScript undefined; other nonserializable values error.
 
-`capabilities` returns backend name/version, selected route, evaluation world, upload limit, and support flags. Zen's `domInspection`, `domInteraction`, and `fileInputUpload` require the installed extension's page-interaction permission; the capability report cannot inspect whether it has been granted. Its `fullCDP`, `nativeFileChooser`, `cdpNetwork`, `cdpScreenshot`, and `tabGroups` are false. Isolated USER_SCRIPT evaluation sees the DOM but not website JavaScript globals.
+`capabilities` returns backend name/version, selected route, evaluation world, upload limit, and support flags. Zen's `domInspection`, `domInteraction`, and `fileInputUpload` require the installed extension's page-interaction permission; the capability report cannot inspect whether it has been granted. Its `fullCDP`, `nativeFileChooser`, `cdpNetwork`, and `tabGroups` are false. `cdpScreenshot` comes from the installed extension screenshot capability; it remains false for older Zen builds and becomes true after the updated XPI is loaded. Isolated USER_SCRIPT evaluation sees the DOM but not website JavaScript globals.
 
-Helpers use CSS selectors in the main document. Cross-origin frames, shadow-root traversal, trusted events, and screenshots need another supported interface or user cooperation. The new helpers run in the shared host runner; they are not new extension wire methods or SDK convenience methods. Raw SDK CDP evaluation remains available where needed.
+Helpers use CSS selectors in the main document. Cross-origin frame DOM access, shadow-root traversal, and trusted events need another supported interface or user cooperation. Rendered screenshots use the separate screenshot command. The new helpers run in the shared host runner; they are not new extension wire methods or SDK convenience methods. Raw SDK CDP evaluation remains available where needed.
+
+## Screenshot output and compatibility
+
+The CLI writes the image to `--output` and prints only metadata (path, tab id,
+MIME type, dimensions, byte count). MCP returns an image content block and small
+metadata when output is omitted; base64 is not duplicated in text. With `output`,
+it saves the image and returns metadata only. Files use private creation mode
+and existing output is protected unless overwrite is explicitly requested.
+
+Firefox captures the specified managed tab with `tabs.captureTab`, without
+activating a different tab. Its `<all_urls>` host permission must be granted.
+Clip coordinates are CSS pixels relative to the document; omitted clip scale
+means 1, with supported scale in (0,4]. Full-page capture reads CSS layout metrics
+and constructs a page-relative clip. It does not scroll to force lazy content to
+load. Viewport capture without a clip uses Firefox's default device pixel ratio.
+Limits: 16384 output pixels per side, 32 megapixels total, and 32 MiB encoded-image
+bytes. Large full-page captures fail with a limit error; use smaller clips.
+
+Raw `Page.captureScreenshot` supports png/jpeg, JPEG quality, clip,
+`fromSurface:true`, and `captureBeyondViewport`. Explicit clipped capture with
+`captureBeyondViewport:false`, `fromSurface:false`, `optimizeForSpeed:true`,
+webp, and unknown parameters are rejected. Without a clip the viewport is
+captured even if captureBeyondViewport is true. `Page.getLayoutMetrics` returns
+CSS layout viewport and content size in Zen; this is a subset of Chrome CDP.
+Update/reload the Zen XPI and restart MCP to discover the new tool.

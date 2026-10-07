@@ -88,6 +88,7 @@ func newRootCommand() *cobra.Command {
 	}
 	root.Flags().BoolVarP(&showVersion, "version", "v", false, "print version")
 	root.AddCommand(newDOMCommands()...)
+	root.AddCommand(newScreenshotCommand())
 	root.AddCommand(
 		newHostCommand(),
 		newSetupCommand(),

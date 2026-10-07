@@ -69,7 +69,8 @@ earlier experimental installation overwrote Chrome registration, rerun both
 the fixed CLI.
 
 The Zen route supports the normal tab/history/session commands plus the core
-`Page.navigate`, `Page.reload`, `Page.close`, `Runtime.evaluate`, and
+`Page.navigate`, `Page.reload`, `Page.close`, `Page.captureScreenshot`,
+`Page.getLayoutMetrics` (CSS subset), `Runtime.evaluate`, and
 `Target.getTargets` compatibility calls. Firefox does not implement Chrome's
 extension debugger API, so arbitrary CDP methods and local file chooser path
 injection are unavailable.

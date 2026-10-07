@@ -38,3 +38,18 @@ readiness, native setters/events, expected-value guards, blocked targets, promis
 file bytes/replacement, and no implicit submission. It creates and finalizes only
 its own localhost fixture tab. This does not validate Windows GUI behavior,
 Chrome helper runtime behavior, trusted events, or production site compatibility.
+
+## Zen screenshot verification (2026-10-07)
+
+Screenshot regression tests cover ownership, parameter rejection, capability
+discovery for older/newer extensions, protected output files, and MCP image
+blocks. A disposable headless Zen 1.22.2b instance loaded the packaged updated
+XPI and exercised screenshots through the real OBU native host/Go runner:
+viewport 1167x752, PNG clip 400x200 with scale 2, JPEG clip 120x90, and full-page
+1167x2400. Pixel checks verified the fixture color and offscreen footer.
+
+The Linux-only `scripts/zen-screenshot-smoke.py` uses geckodriver only to start
+the isolated browser/install the XPI and grant test-profile permissions; capture
+uses OBU. It requires geckodriver, a Zen binary, packaged XPI and native host.
+Normal user profiles are not changed. Chrome runtime screenshots and Windows
+screenshot runtime behavior were not exercised by this smoke.

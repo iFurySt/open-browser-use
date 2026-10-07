@@ -112,11 +112,17 @@ func (runner *actionRunner) capabilities() (map[string]any, int, error) {
 		return nil, tabID, errors.New("unknown browser backend; inspect info before using capabilities")
 	}
 	firefox := strings.Contains(name, "Firefox")
+	screenshot := !firefox
+	if caps, ok := info["capabilities"].(map[string]any); ok {
+		if support, ok := caps["screenshot"].(map[string]any); ok {
+			screenshot = support["cdp"] == true
+		}
+	}
 	return map[string]any{"result": map[string]any{
 		"backend": name, "extensionVersion": info["version"], "browserSelector": runner.options.browser, "profileSelector": runner.options.profile,
 		"evaluationWorld": map[bool]string{true: "USER_SCRIPT (isolated from page JavaScript globals)", false: "page main world"}[firefox],
 		"domInspection":   true, "domInteraction": true, "fileInputUpload": true, "maxUploadBytes": maxInputFileBytes,
-		"nativeFileChooser": !firefox, "fullCDP": !firefox, "cdpNetwork": !firefox, "cdpScreenshot": !firefox, "tabGroups": !firefox,
+		"nativeFileChooser": !firefox, "fullCDP": !firefox, "cdpNetwork": !firefox, "cdpScreenshot": screenshot, "tabGroups": !firefox,
 		"pageInteractionRequiresPermission": firefox,
 		"limitations":                       map[bool]string{true: "DOM support requires the extension's page-interaction permission. File uploads use synthetic File/DataTransfer events, not a native chooser. Cross-origin frames and trusted input events are not covered.", false: "DOM helpers use CSS selectors in the main document. File uploads use synthetic File/DataTransfer events; use the native chooser for larger files or sites requiring trusted selection."}[firefox],
 	}}, tabID, nil

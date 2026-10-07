@@ -376,7 +376,7 @@ func mcpTools() []mcpTool {
 			}, []string{"script"}),
 		},
 	}
-	return append(tools, domMCPTools()...)
+	return append(append(tools, domMCPTools()...), screenshotMCPTool())
 }
 
 func emptyObjectSchema() map[string]any {
@@ -444,6 +444,9 @@ func (server *mcpServer) callTool(params json.RawMessage) (map[string]any, error
 }
 
 func (server *mcpServer) runTool(name string, arguments map[string]any) (any, error) {
+	if name == "screenshot" {
+		return server.runScreenshotTool(arguments)
+	}
 	switch name {
 	case "ping":
 		return server.invoke("ping", map[string]any{})
@@ -658,11 +661,18 @@ func (server *mcpServer) runSetFileChooserFilesTool(arguments map[string]any) (a
 }
 
 func mcpToolResult(output any) (map[string]any, error) {
+	var screenshot *screenshotResult
+	if result, ok := output.(screenshotResult); ok && result.Data != "" {
+		screenshot = &result
+		metadata := result
+		metadata.Data = ""
+		output = metadata
+	}
 	payload, err := json.Marshal(output)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
+	result := map[string]any{
 		"content": []map[string]any{
 			{
 				"type": "text",
@@ -671,7 +681,11 @@ func mcpToolResult(output any) (map[string]any, error) {
 		},
 		"structuredContent": output,
 		"isError":           false,
-	}, nil
+	}
+	if screenshot != nil {
+		result["content"] = append(result["content"].([]map[string]any), map[string]any{"type": "image", "data": screenshot.Data, "mimeType": screenshot.MimeType})
+	}
+	return result, nil
 }
 
 func mcpToolErrorResult(message string) map[string]any {

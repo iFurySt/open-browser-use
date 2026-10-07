@@ -292,3 +292,19 @@ instance ids; MCP can enumerate hosts and pin a route/task session once before
 browser work. Server-start selectors remain pinned. Unselected legacy CLI routing
 through active.json remains available; agent skill guidance requires explicit
 routes. Parameters and limits: [agent commands](../skills/open-browser-use/references/agent-commands.md).
+
+## Zen screenshots (2026-10-07)
+
+Firefox compatibility maps Page.captureScreenshot to tabs.captureTab and exposes
+a CSS-only Page.getLayoutMetrics subset for full-page clips. Shared ownership
+checks run before capture; no active-tab screenshot fallback or focus switch is
+used. PNG/JPEG, quality, clip and scale are supported; unsupported CDP options
+fail explicitly. Backend getInfo advertises screenshot.cdp support, so the host
+capability report does not assume older Zen extensions have the adapter.
+
+The Go screenshot command validates inputs and image headers/size, writes private
+output files with exclusive creation by default, or returns an MCP image block
+with metadata. Images are not repeated as base64 text. Bounds are 16384 pixels per
+side, 32 megapixels and 32 MiB image bytes, keeping messages below the existing
+64 MiB native host frame cap. Full-page Zen capture needs page interaction for
+layout metrics; viewport capture uses Firefox's host permission instead.

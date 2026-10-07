@@ -337,7 +337,11 @@ class BrowserBackend {
       version: chrome.runtime.getManifest().version,
       type: "extension",
       capabilities: {
-        tab: webMcpEnabled ? [WEBMCP_CAPABILITY] : []
+        tab: webMcpEnabled ? [WEBMCP_CAPABILITY] : [],
+        screenshot: {
+          cdp: HAS_CHROME_DEBUGGER || globalThis.openBrowserUseFirefoxScreenshotSupported?.(chrome) === true,
+          formats: ["png", "jpeg"]
+        }
       },
       metadata: {
         extensionId: chrome.runtime.id,

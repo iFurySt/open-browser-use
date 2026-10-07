@@ -304,6 +304,29 @@ async function run() {
     console.log("test 3 ok: ungrouped ownership, concurrent claims, restore and cleanup");
   }
 
+  // Capture must enforce ownership before calling the Firefox screenshot API.
+  {
+    const { chrome, helpers } = createChromeFake();
+    delete chrome.debugger;
+    delete chrome.tabGroups;
+    delete chrome.tabs.group;
+    let captures = 0;
+    chrome.tabs.captureTab = async () => { captures++; return "data:image/png;base64,AA=="; };
+    const adapter = await readFile(path.join(HERE, "../zen-extension/firefox-compat.js"), "utf8");
+    const { BrowserBackend } = await loadBackground(adapter + "\n" + bgSource, chrome);
+    const backend = new BrowserBackend();
+    await backend.store.ready;
+    const tab = helpers.createTab();
+    await backend.ensureSessionGroup("owner", tab, "agent");
+    backend.attachedTabs.add(tab);
+    const request = session => ({ session_id:session, turn_id:"shot", target:{tabId:tab}, method:"Page.captureScreenshot", commandParams:{} });
+    await assert.rejects(backend.executeCdp(request("other")), /not managed|another session|not part|already part/);
+    assert.equal(captures, 0);
+    assert.equal((await backend.executeCdp(request("owner"))).data, "AA==");
+    assert.equal(captures, 1);
+    console.log("test 4 ok: screenshot respects session ownership");
+  }
+
   console.log("\nAll finalizeTabs detach tests passed.");
 }
 
