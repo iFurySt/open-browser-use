@@ -244,8 +244,8 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "claim_tab",
-			Title:       "Claim Existing Tab",
-			Description: "Claim an existing Chrome tab by id for the current browser session.",
+			Title:       "Claim OBU-Owned Tab",
+			Description: "Claim an existing Chrome tab that is already in an Open Browser Use-owned tab group for the current browser session.",
 			InputSchema: objectSchema(map[string]any{
 				"tab_id": integerSchema("Chrome tab id to claim."),
 			}, []string{"tab_id"}),

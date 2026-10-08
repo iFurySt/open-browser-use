@@ -1229,7 +1229,7 @@ func newClaimTabCommand() *cobra.Command {
 	var tabID int
 	cmd := &cobra.Command{
 		Use:   "claim-tab",
-		Short: "Claim an existing Chrome tab",
+		Short: "Claim an existing OBU-owned Chrome tab",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if tabID <= 0 {
