@@ -1,6 +1,6 @@
 {
   "name": "@open-browser-use/browser-use-protocol",
-  "version": "0.1.42",
+  "version": "1.0.0",
   "private": true,
   "description": "Browser Use native pipe framing and JSON-RPC helpers.",
   "type": "module",

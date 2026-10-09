@@ -4,6 +4,7 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-10-09 | Open Browser Use 1.0 | CLI、Chrome extension 与多语言 SDK 进入首个稳定正式版本；用户可以在真实 Chrome profile 中使用完整的 tab/CDP/history/download/file chooser/WebMCP 能力，并通过 npm、PyPI、Homebrew 或 GitHub Release 安装。 | 发布 `v1.0.0`，统一 CLI、extension、protocol、JavaScript SDK、Python SDK 和内部 client-rewrite 的版本；收录 `v0.1.42` 以来的 WebMCP 页面工具、多关键词历史搜索、connected profile 选择优化和本地 ZIP setup。 |
 | 2026-10-09 | Local Extension Setup | 已经拿到离线扩展 ZIP 的用户可以直接运行 `open-browser-use setup --zip <path>`，不必记忆 `setup beta` 子命令，也不会重复从 GitHub Releases 下载插件包。 | 普通 `setup` 新增 `--zip`，复用现有 keyed manual-install、native host 注册和扩展页引导；保留 `setup beta` 及 `setup beta --zip` 兼容行为，并补充 CLI 回归测试和安装文档。 |
 
 ## 2026-09
