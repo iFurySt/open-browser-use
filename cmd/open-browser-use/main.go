@@ -140,6 +140,7 @@ func newSetupCommand() *cobra.Command {
 	extensionID := defaultChromeExtensionID
 	var binaryPath string
 	var externalExtensionOutput string
+	var zipPath string
 	var browser string
 	var noOpen bool
 	cmd := &cobra.Command{
@@ -147,6 +148,16 @@ func newSetupCommand() *cobra.Command {
 		Short: "Register Chrome integration for Open Browser Use",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if zipPath != "" {
+				return runManualSetupCommand(cmd, manualSetupOptions{
+					ExtensionID: extensionID,
+					BinaryPath:  binaryPath,
+					ZIPPath:     zipPath,
+					Browser:     browser,
+					NoOpen:      noOpen,
+					Title:       "Open Browser Use local ZIP setup",
+				})
+			}
 			result, err := setupChrome(extensionID, binaryPath, externalExtensionOutput, browser)
 			if err != nil {
 				return err
@@ -166,8 +177,9 @@ func newSetupCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&externalExtensionOutput, "external-extension-output", "", "Chrome external extension JSON output path")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register with Chrome Web Store setup (chrome or chrome-beta)")
-	cmd.Flags().BoolVar(&noOpen, "no-open", false, "register Chrome integration without opening the Chrome Web Store page")
+	cmd.Flags().StringVar(&zipPath, "zip", "", "existing extension ZIP path; use it instead of the Chrome Web Store")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().BoolVar(&noOpen, "no-open", false, "register Chrome integration without opening Chrome or the file manager")
 	cmd.AddCommand(newSetupBetaCommand())
 	return cmd
 }
@@ -183,64 +195,15 @@ func newSetupBetaCommand() *cobra.Command {
 		Short: "Register the native host and prepare the beta extension package",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			resolvedZIPPath := zipPath
-			if resolvedZIPPath == "" {
-				var err error
-				resolvedZIPPath, err = downloadLatestReleaseZIP()
-				if err != nil {
-					return err
-				}
-			} else {
-				var err error
-				resolvedZIPPath, err = resolveExistingExtensionZIP(resolvedZIPPath)
-				if err != nil {
-					return err
-				}
-			}
-			unpackedPath, unpackedExtensionID, err := installUnpackedExtension(resolvedZIPPath)
-			if err != nil {
-				return err
-			}
-			installZIPPath, err := writeBetaInstallZIP(unpackedPath, resolvedZIPPath)
-			if err != nil {
-				return err
-			}
-			effectiveExtensionID := extensionID
-			if !cmd.Flags().Changed("extension-id") {
-				effectiveExtensionID = unpackedExtensionID
-			}
-			if effectiveExtensionID != unpackedExtensionID {
-				return fmt.Errorf("--extension-id %s does not match keyed beta ZIP extension id %s", effectiveExtensionID, unpackedExtensionID)
-			}
-			manifestPath, err := installNativeManifestForBrowser(effectiveExtensionID, binaryPath, "", browser)
-			if err != nil {
-				return err
-			}
-			status := detectBrowserExtensionForBrowser(host.DefaultSocketDir, 700*time.Millisecond, browser)
-			status.InstallCommand = "open-browser-use setup beta"
-			if strings.TrimSpace(browser) != "" {
-				status.InstallCommand += " --browser " + browser
-			}
-			status.UpgradeCommand = status.InstallCommand
-			shouldOpen := shouldOpenManualSetup(status, noOpen)
-			if shouldOpen {
-				if err := openChromeExtensionsPage(); err != nil {
-					return err
-				}
-				if err := revealFile(installZIPPath); err != nil {
-					return err
-				}
-			}
-			skillUpdate := maybeUpdateInstalledSkill()
-			return renderManualSetupResult(cmd.OutOrStdout(), manualSetupResult{
-				NativeManifestPath: manifestPath,
-				ExtensionID:        effectiveExtensionID,
-				ZIPPath:            installZIPPath,
-				UnpackedPath:       unpackedPath,
-				OpenedChrome:       shouldOpen,
-				OpenedFileManager:  shouldOpen,
-				SkillUpdate:        skillUpdate,
-			}, status)
+			return runManualSetupCommand(cmd, manualSetupOptions{
+				ExtensionID:   extensionID,
+				BinaryPath:    binaryPath,
+				ZIPPath:       zipPath,
+				Browser:       browser,
+				NoOpen:        noOpen,
+				AllowDownload: true,
+				Title:         "Open Browser Use beta setup",
+			})
 		},
 	}
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
@@ -249,6 +212,81 @@ func newSetupBetaCommand() *cobra.Command {
 	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "download and unpack the extension without opening Chrome")
 	return cmd
+}
+
+type manualSetupOptions struct {
+	ExtensionID   string
+	BinaryPath    string
+	ZIPPath       string
+	Browser       string
+	NoOpen        bool
+	AllowDownload bool
+	Title         string
+}
+
+func runManualSetupCommand(cmd *cobra.Command, options manualSetupOptions) error {
+	resolvedZIPPath := options.ZIPPath
+	if resolvedZIPPath == "" {
+		if !options.AllowDownload {
+			return errors.New("--zip is required for local ZIP setup")
+		}
+		var err error
+		resolvedZIPPath, err = downloadLatestReleaseZIP()
+		if err != nil {
+			return err
+		}
+	} else {
+		var err error
+		resolvedZIPPath, err = resolveExistingExtensionZIP(resolvedZIPPath)
+		if err != nil {
+			return err
+		}
+	}
+	unpackedPath, unpackedExtensionID, err := installUnpackedExtension(resolvedZIPPath)
+	if err != nil {
+		return err
+	}
+	installZIPPath, err := writeBetaInstallZIP(unpackedPath, resolvedZIPPath)
+	if err != nil {
+		return err
+	}
+	effectiveExtensionID := options.ExtensionID
+	if !cmd.Flags().Changed("extension-id") {
+		effectiveExtensionID = unpackedExtensionID
+	}
+	if effectiveExtensionID != unpackedExtensionID {
+		return fmt.Errorf("--extension-id %s does not match keyed ZIP extension id %s", effectiveExtensionID, unpackedExtensionID)
+	}
+	manifestPath, err := installNativeManifestForBrowser(effectiveExtensionID, options.BinaryPath, "", options.Browser)
+	if err != nil {
+		return err
+	}
+	status := detectBrowserExtensionForBrowser(host.DefaultSocketDir, 700*time.Millisecond, options.Browser)
+	status.InstallCommand = "open-browser-use setup beta"
+	if strings.TrimSpace(options.Browser) != "" {
+		status.InstallCommand += " --browser " + options.Browser
+	}
+	status.UpgradeCommand = status.InstallCommand
+	shouldOpen := shouldOpenManualSetup(status, options.NoOpen)
+	if shouldOpen {
+		if err := openChromeExtensionsPage(); err != nil {
+			return err
+		}
+		if err := revealFile(installZIPPath); err != nil {
+			return err
+		}
+	}
+	skillUpdate := maybeUpdateInstalledSkill()
+	return renderManualSetupResult(cmd.OutOrStdout(), manualSetupResult{
+		Title:              options.Title,
+		NativeManifestPath: manifestPath,
+		ExtensionID:        effectiveExtensionID,
+		ZIPPath:            installZIPPath,
+		UnpackedPath:       unpackedPath,
+		OpenedChrome:       shouldOpen,
+		OpenedFileManager:  shouldOpen,
+		SkillUpdate:        skillUpdate,
+	}, status)
 }
 
 func newManifestCommand() *cobra.Command {
@@ -352,6 +390,7 @@ type setupResult struct {
 }
 
 type manualSetupResult struct {
+	Title              string
 	NativeManifestPath string
 	ExtensionID        string
 	ZIPPath            string
@@ -471,7 +510,7 @@ func renderStoreSetupResult(writer io.Writer, result setupResult, status browser
 }
 
 func renderManualSetupResult(writer io.Writer, result manualSetupResult, status browserExtensionStatus) error {
-	fmt.Fprintln(writer, "✅ Open Browser Use beta setup")
+	fmt.Fprintf(writer, "✅ %s\n", result.Title)
 	fmt.Fprintf(writer, "1. ✅ Registered native host\n   %s\n", result.NativeManifestPath)
 	fmt.Fprintf(writer, "2. ✅ Prepared browser extension package\n   Extension id: %s\n   ZIP: %s\n   Includes stable extension key for this id.\n", result.ExtensionID, result.ZIPPath)
 	fmt.Fprintf(writer, "3. ✅ Prepared unpacked extension directory\n   %s\n", result.UnpackedPath)

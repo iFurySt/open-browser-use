@@ -47,6 +47,13 @@ open-browser-use setup
 如果 Chrome Web Store 暂时不可用，可以运行 `open-browser-use setup beta`
 准备带固定 key 的 release ZIP，再到 `chrome://extensions/` 手动安装。
 
+如果本地已经有扩展 ZIP，可以直接把路径传给 setup。该方式不会从 GitHub Release
+下载插件包，仍会准备带固定 key 的手动安装包：
+
+```bash
+open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
+```
+
 ### 使用
 
 #### SDK
