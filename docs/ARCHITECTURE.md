@@ -105,7 +105,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   版本低于当前 CLI 期望版本时，CLI 才打开 Chrome Web Store 正式扩展页，引导
   用户手动安装或启用扩展。macOS/Windows 仍可能需要用户在 Chrome 中确认启用
   扩展并重启；Linux 的 External Extensions 写入默认使用 Chrome 官方系统路径，
-  可能需要更高权限。
+  可能需要更高权限。传入 `--zip <本地路径>` 时不走 Web Store，而是复用 keyed
+  manual-install 流程：展开本地 ZIP、写入稳定 fallback key、原地重新打包并注册
+  对应 extension id 的 native host，然后按需打开扩展页和文件管理器。
 - `open-browser-use setup beta`：Chrome Web Store 临时不可用时的备用路径，
   注册 native host 后从 GitHub Releases 下载最新
   `open-browser-use-chrome-extension-*.zip`。CLI 会在本地 unpacked 目录和待拖入
@@ -115,7 +117,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   手动安装；GitHub Release 中的正式 zip 本身保持为 Chrome Web Store 上传包，
   不再预写 beta key。setup 过程中如果本机已有可用的 `npx skills`，会
   best-effort 执行 `npx skills update open-browser-use -g -y` 更新已有 agent
-  skill；未检测到 skills 时只展示 Codex 和 Claude Code 的安装命令。
+  skill；未检测到 skills 时只展示 Codex 和 Claude Code 的安装命令。原有
+  `setup beta --zip <本地路径>` 继续兼容，但本地包的首选入口是
+  `setup --zip <本地路径>`。
 - manifest 的 `path` 默认统一写入稳定 native host link：
   macOS 为
   `~/Library/Application Support/OpenBrowserUse/native-host/open-browser-use`，

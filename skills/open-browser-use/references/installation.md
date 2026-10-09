@@ -48,6 +48,19 @@ For Chrome Beta, register that browser explicitly:
 open-browser-use setup --browser chrome-beta
 ```
 
+If an extension ZIP is already available locally, use it directly without a
+GitHub Release download:
+
+```sh
+open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
+```
+
+Setup unpacks the ZIP, adds the stable fallback key, rewrites that ZIP in
+place, registers the matching native host origin, and opens
+`chrome://extensions/` plus the system file manager when manual installation
+is needed. The supported input is a ZIP whose root contains `manifest.json`;
+CRX and certificate files are not supported by `--zip`.
+
 For BitBrowser, install or load the extension in the target BitBrowser instance,
 then register the native host manifest into that instance's user-data directory:
 
@@ -67,6 +80,8 @@ open-browser-use setup beta
 This downloads the latest keyed `open-browser-use-chrome-extension-*.zip` from GitHub Releases and registers the native host for that stable extension id. It opens `chrome://extensions/` and reveals the ZIP in Finder or the system file manager only when the browser extension is missing or older than the CLI-expected version. Ask the user to enable Developer mode and drag that ZIP into the Chrome extensions page when setup prints that next step.
 
 For Chrome Beta, use `open-browser-use setup beta --browser chrome-beta`.
+The older `open-browser-use setup beta --zip <path>` spelling remains
+supported for local ZIPs.
 
 Repair only the native host manifest:
 

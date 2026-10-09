@@ -47,12 +47,17 @@ If no active host exists, opening Chrome with the extension enabled can allow Ch
 
 The native host manifest must allow the installed extension id. The default Web Store id is built into the CLI, while `setup beta` uses the keyed GitHub Release ZIP, registers that stable id, and reveals that same ZIP for manual installation.
 
+For a ZIP that already exists locally, `setup --zip <path>` uses the same keyed
+manual-install path without downloading the package. The supported `--zip`
+input is a ZIP archive, not a CRX or certificate file.
+
 Use:
 
 ```sh
 open-browser-use manifest
 open-browser-use install-manifest
 open-browser-use setup
+open-browser-use setup --zip /absolute/path/to/extension.zip
 open-browser-use setup beta
 ```
 

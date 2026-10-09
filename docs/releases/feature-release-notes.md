@@ -1,5 +1,11 @@
 # 功能发布记录
 
+## 2026-10
+
+| 日期 | 功能域 | 用户价值 | 变更摘要 |
+| --- | --- | --- | --- |
+| 2026-10-09 | Local Extension Setup | 已经拿到离线扩展 ZIP 的用户可以直接运行 `open-browser-use setup --zip <path>`，不必记忆 `setup beta` 子命令，也不会重复从 GitHub Releases 下载插件包。 | 普通 `setup` 新增 `--zip`，复用现有 keyed manual-install、native host 注册和扩展页引导；保留 `setup beta` 及 `setup beta --zip` 兼容行为，并补充 CLI 回归测试和安装文档。 |
+
 ## 2026-09
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |

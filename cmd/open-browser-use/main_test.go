@@ -305,74 +305,102 @@ func TestCobraSetupRejectsBitBrowserExternalExtensionPath(t *testing.T) {
 	}
 }
 
-func TestCobraSetupBetaUsesProvidedZIP(t *testing.T) {
+func TestCobraSetupUsesProvidedZIP(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("stable native host link is not implemented on windows")
 	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("PATH", t.TempDir())
-	targetPath := filepath.Join(t.TempDir(), "open-browser-use")
-	if err := os.WriteFile(targetPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	zipPath := filepath.Join(t.TempDir(), "open-browser-use-chrome-extension.zip")
-	expectedExtensionID, err := extensionIDFromPublicKey(betaExtensionPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := writeTestExtensionZIP(zipPath); err != nil {
-		t.Fatal(err)
+	testCases := []struct {
+		name  string
+		args  func(targetPath string, zipPath string) []string
+		title string
+	}{
+		{
+			name: "setup local ZIP",
+			args: func(targetPath string, zipPath string) []string {
+				return []string{"setup", "--path", targetPath, "--zip", zipPath, "--no-open"}
+			},
+			title: "Open Browser Use local ZIP setup",
+		},
+		{
+			name: "setup beta compatibility",
+			args: func(targetPath string, zipPath string) []string {
+				return []string{"setup", "beta", "--path", targetPath, "--zip", zipPath, "--no-open"}
+			},
+			title: "Open Browser Use beta setup",
+		},
 	}
 
-	cmd := newRootCommand()
-	var output bytes.Buffer
-	cmd.SetOut(&output)
-	cmd.SetArgs([]string{"setup", "beta", "--path", targetPath, "--zip", zipPath, "--no-open"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	got := output.String()
-	if !strings.Contains(got, "ZIP:") || !strings.Contains(got, zipPath) {
-		t.Fatalf("expected setup beta output to mention install ZIP path, got %q", got)
-	}
-	if strings.Contains(got, "-manual.zip") {
-		t.Fatalf("expected setup beta output to avoid a separate manual ZIP path, got %q", got)
-	}
-	if !strings.Contains(got, "Extension id: "+expectedExtensionID) {
-		t.Fatalf("expected setup beta output to mention unpacked extension id, got %q", got)
-	}
-	if !strings.Contains(got, "drag in "+zipPath) && !strings.Contains(got, "All set.") {
-		t.Fatalf("expected setup beta output to mention manual install or connected status, got %q", got)
-	}
-	manifestPath := filepath.Join(home, "Library/Application Support/Google/Chrome/NativeMessagingHosts", host.NativeHostName+".json")
-	if runtime.GOOS == "linux" {
-		manifestPath = filepath.Join(home, ".config/google-chrome/NativeMessagingHosts", host.NativeHostName+".json")
-	}
-	payload, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(payload), "chrome-extension://"+expectedExtensionID+"/") {
-		t.Fatalf("expected native manifest to allow unpacked extension id, got %s", payload)
-	}
-	unpackedPath, err := defaultUnpackedExtensionDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	unpackedManifest, err := os.ReadFile(filepath.Join(unpackedPath, "manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(unpackedManifest), betaExtensionPublicKey) {
-		t.Fatalf("expected unpacked manifest to include stable key, got %s", unpackedManifest)
-	}
-	installManifest, err := readManifestFromZIP(zipPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(installManifest), betaExtensionPublicKey) {
-		t.Fatalf("expected install ZIP manifest to include stable key, got %s", installManifest)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("PATH", t.TempDir())
+			targetPath := filepath.Join(t.TempDir(), "open-browser-use")
+			if err := os.WriteFile(targetPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			zipPath := filepath.Join(t.TempDir(), "open-browser-use-chrome-extension.zip")
+			expectedExtensionID, err := extensionIDFromPublicKey(betaExtensionPublicKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeTestExtensionZIP(zipPath); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := newRootCommand()
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetArgs(testCase.args(targetPath, zipPath))
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			got := output.String()
+			if !strings.Contains(got, "✅ "+testCase.title) {
+				t.Fatalf("expected setup output to identify %q, got %q", testCase.title, got)
+			}
+			if !strings.Contains(got, "ZIP:") || !strings.Contains(got, zipPath) {
+				t.Fatalf("expected setup output to mention install ZIP path, got %q", got)
+			}
+			if strings.Contains(got, "-manual.zip") {
+				t.Fatalf("expected setup output to avoid a separate manual ZIP path, got %q", got)
+			}
+			if !strings.Contains(got, "Extension id: "+expectedExtensionID) {
+				t.Fatalf("expected setup output to mention unpacked extension id, got %q", got)
+			}
+			if !strings.Contains(got, "drag in "+zipPath) && !strings.Contains(got, "All set.") {
+				t.Fatalf("expected setup output to mention manual install or connected status, got %q", got)
+			}
+			manifestPath := filepath.Join(home, "Library/Application Support/Google/Chrome/NativeMessagingHosts", host.NativeHostName+".json")
+			if runtime.GOOS == "linux" {
+				manifestPath = filepath.Join(home, ".config/google-chrome/NativeMessagingHosts", host.NativeHostName+".json")
+			}
+			payload, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(payload), "chrome-extension://"+expectedExtensionID+"/") {
+				t.Fatalf("expected native manifest to allow unpacked extension id, got %s", payload)
+			}
+			unpackedPath, err := defaultUnpackedExtensionDir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			unpackedManifest, err := os.ReadFile(filepath.Join(unpackedPath, "manifest.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(unpackedManifest), betaExtensionPublicKey) {
+				t.Fatalf("expected unpacked manifest to include stable key, got %s", unpackedManifest)
+			}
+			installManifest, err := readManifestFromZIP(zipPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(installManifest), betaExtensionPublicKey) {
+				t.Fatalf("expected install ZIP manifest to include stable key, got %s", installManifest)
+			}
+		})
 	}
 }
 

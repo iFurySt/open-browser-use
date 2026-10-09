@@ -57,6 +57,14 @@ If the Chrome Web Store item is temporarily unavailable, use
 `open-browser-use setup beta` to prepare a keyed release ZIP for manual
 installation from `chrome://extensions/`.
 
+To use an extension ZIP that is already available locally, pass its path
+directly to setup. This skips the GitHub Release download while keeping the
+same keyed manual-install flow:
+
+```bash
+open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
+```
+
 ### Use It
 
 #### SDK

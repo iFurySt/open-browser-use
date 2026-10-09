@@ -42,6 +42,16 @@ origin。只有检测到浏览器插件未安装或版本低于当前 CLI 期望
 `npx skills update open-browser-use -g -y`；未检测到 skills 时只展示 Codex 和
 Claude Code 的 skill 安装命令。
 
+已有本地 extension ZIP 时，首选直接运行：
+
+```bash
+open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
+```
+
+该命令跳过 release 下载，并复用相同的 key 写入、native host 注册和手动安装
+引导。`setup beta --zip <path>` 继续作为兼容写法。`--zip` 支持的输入是 ZIP，不是
+`.crx` 或证书文件；命令会把写入 stable key 后的内容原地重新打包到传入路径。
+
 这条 fallback 会安装为 beta extension id，而不是 Chrome Web Store 的正式
 extension id。它适合“CI 已发新版 release，但 Chrome Web Store 仍在审核新版”的
 窗口期。审核通过后，用户应回到正式路径运行 `open-browser-use setup`，让 native

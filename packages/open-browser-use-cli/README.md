@@ -49,6 +49,16 @@ open-browser-use setup beta
 That command opens `chrome://extensions/` and reveals a keyed release ZIP so
 the user can drag it into Chrome with a stable fallback extension id.
 
+If the extension ZIP is already available locally, pass it to the main setup
+command instead of downloading it from GitHub Releases:
+
+```sh
+open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
+```
+
+The local ZIP path uses the same keyed manual-install flow. The existing
+`setup beta --zip <path>` form remains supported for compatibility.
+
 Verify the browser connection:
 
 ```sh
