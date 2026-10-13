@@ -41,7 +41,7 @@ Open Browser Use connects an MV3 Chrome extension, a local native messaging host
 ## Browser and profile handling
 
 Some users run several supported browsers (for example Google Chrome, Google
-Chrome Beta, or BitBrowser) and may also have multiple profiles inside them.
+Chrome Beta, Helium, or BitBrowser) and may also have multiple profiles inside them.
 Installed targets remain visible even when their browser/profile is closed, so
 use the `CONNECTED` state—not the number of installed targets—to decide whether
 the agent needs to ask which target this task should operate on.
@@ -56,8 +56,8 @@ the agent needs to ask which target this task should operate on.
    `Profile 1`), `DISPLAY NAME` (what the user sees in the browser avatar
    menu), `VERSION`, and `CONNECTED` (whether that target's host is currently
    reachable). JSON output is available via `--json` and includes a stable
-   `target` such as `chrome:Default`, `chrome-beta:Default`, or
-   `bitbrowser:<instance>:Default`.
+   `target` such as `chrome:Default`, `chrome-beta:Default`, `helium:Default`,
+   or `bitbrowser:<instance>:Default`.
 
 2. If the user already specified a browser/profile, use that target. If it is
    not connected, ask the user to open it before retrying. Do not silently fall
@@ -79,7 +79,7 @@ the agent needs to ask which target this task should operate on.
 
 6. After the target has been selected, pass `--browser <selector>` and, when
    needed, `--profile <selector>` to every CLI / MCP command for the rest of the task.
-   Browser selectors accept ids such as `chrome`, `chrome-beta`, `bitbrowser`,
+   Browser selectors accept ids such as `chrome`, `chrome-beta`, `helium`, `bitbrowser`,
    browser display names, or a BitBrowser instance id. Profile selectors accept
    either the directory name (`Default`, `Profile 1`) or the display name
    (`Eva`, `cookiy.com`), case-insensitive. Do not switch browser/profile

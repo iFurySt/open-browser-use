@@ -165,7 +165,7 @@ func newSetupCommand() *cobra.Command {
 			status := detectBrowserExtensionForBrowser(host.DefaultSocketDir, 700*time.Millisecond, browser)
 			shouldOpenStore := shouldOpenStoreSetup(status, noOpen)
 			if shouldOpenStore {
-				if err := openChromeWebStorePage(); err != nil {
+				if err := openChromeWebStorePage(browser); err != nil {
 					result.StoreOpenError = err.Error()
 				} else {
 					result.OpenedStore = true
@@ -178,7 +178,7 @@ func newSetupCommand() *cobra.Command {
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&externalExtensionOutput, "external-extension-output", "", "Chrome external extension JSON output path")
 	cmd.Flags().StringVar(&zipPath, "zip", "", "existing extension ZIP path; use it instead of the Chrome Web Store")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, helium, bitbrowser, or BitBrowser instance id)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "register Chrome integration without opening Chrome or the file manager")
 	cmd.AddCommand(newSetupBetaCommand())
 	return cmd
@@ -209,7 +209,7 @@ func newSetupBetaCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&zipPath, "zip", "", "existing extension zip path; defaults to the latest GitHub Release zip")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, helium, bitbrowser, or BitBrowser instance id)")
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "download and unpack the extension without opening Chrome")
 	return cmd
 }
@@ -269,7 +269,7 @@ func runManualSetupCommand(cmd *cobra.Command, options manualSetupOptions) error
 	status.UpgradeCommand = status.InstallCommand
 	shouldOpen := shouldOpenManualSetup(status, options.NoOpen)
 	if shouldOpen {
-		if err := openChromeExtensionsPage(); err != nil {
+		if err := openChromeExtensionsPage(options.Browser); err != nil {
 			return err
 		}
 		if err := revealFile(installZIPPath); err != nil {
@@ -330,7 +330,7 @@ func newInstallManifestCommand() *cobra.Command {
 	cmd.Flags().StringVar(&extensionID, "extension-id", defaultChromeExtensionID, "Chrome extension id for allowed_origins")
 	cmd.Flags().StringVar(&binaryPath, "path", "", "native host binary target for the stable host link")
 	cmd.Flags().StringVar(&outputPath, "output", "", "native host manifest output path")
-	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, bitbrowser, or BitBrowser instance id)")
+	cmd.Flags().StringVar(&browser, "browser", "", "browser to register (chrome, chrome-beta, helium, bitbrowser, or BitBrowser instance id)")
 	return cmd
 }
 
@@ -792,6 +792,10 @@ func listInstalledChromeProfiles() ([]installedChromeProfile, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
+			if errors.Is(err, os.ErrPermission) {
+				fmt.Fprintf(os.Stderr, "warning: skipped %s profiles because %s is not readable; results may be incomplete\n", root.BrowserName, root.Root)
+				continue
+			}
 			return nil, err
 		}
 		displayNames := chromeProfileDisplayNames(root.Root)
@@ -1140,7 +1144,7 @@ func addSocketFlags(cmd *cobra.Command, options *socketOptions) {
 	cmd.Flags().StringVar(&options.socketDir, "socket-dir", host.DefaultSocketDir, "directory containing active socket registry")
 	cmd.Flags().DurationVar(&options.timeout, "timeout", 10*time.Second, "request timeout")
 	cmd.Flags().StringVar(&options.sessionID, "session-id", options.sessionID, "browser session id used for tab grouping and cleanup")
-	cmd.Flags().StringVar(&options.browser, "browser", "", "browser selector (chrome, chrome-beta, bitbrowser, or display name)")
+	cmd.Flags().StringVar(&options.browser, "browser", "", "browser selector (chrome, chrome-beta, helium, bitbrowser, or display name)")
 	cmd.Flags().StringVar(&options.profile, "profile", "", "Chrome profile selector (directory name like \"Default\" / \"Profile 1\" or display name like \"Eva\")")
 }
 
@@ -1573,6 +1577,11 @@ func supportedBrowserProfileRoots() ([]browserProfileRoot, error) {
 				BrowserID:   "chrome-beta",
 				BrowserName: "Google Chrome Beta",
 				Root:        filepath.Join(home, "Library/Application Support/Google/Chrome Beta"),
+			},
+			{
+				BrowserID:   "helium",
+				BrowserName: "Helium",
+				Root:        filepath.Join(home, "Library/Application Support/net.imput.helium"),
 			},
 		}
 		bitBrowserRoots, err := bitBrowserProfileRoots(home)
@@ -3388,11 +3397,19 @@ func revealFile(path string) error {
 	return cmd.Process.Release()
 }
 
-func openChromeExtensionsPage() error {
+func macOSBrowserApp(browserSelector string) string {
+	root, err := browserRootForInstallSelector(browserSelector)
+	if err != nil || root.BrowserID == "bitbrowser" {
+		return "Google Chrome"
+	}
+	return root.BrowserName
+}
+
+func openChromeExtensionsPage(browserSelector string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", "-a", "Google Chrome", "chrome://extensions/")
+		cmd = exec.Command("open", "-a", macOSBrowserApp(browserSelector), "chrome://extensions/")
 	case "linux":
 		cmd = exec.Command("xdg-open", "chrome://extensions/")
 	case "windows":
@@ -3406,11 +3423,11 @@ func openChromeExtensionsPage() error {
 	return cmd.Process.Release()
 }
 
-func openChromeWebStorePage() error {
+func openChromeWebStorePage(browserSelector string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("open", "-a", "Google Chrome", chromeWebStoreExtensionURL)
+		cmd = exec.Command("open", "-a", macOSBrowserApp(browserSelector), chromeWebStoreExtensionURL)
 	case "linux":
 		cmd = exec.Command("xdg-open", chromeWebStoreExtensionURL)
 	case "windows":

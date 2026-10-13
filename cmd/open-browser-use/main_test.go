@@ -189,7 +189,7 @@ func TestCobraInstallManifestDefaultsToStoreExtension(t *testing.T) {
 	}
 }
 
-func TestCobraInstallManifestSupportsChromeBeta(t *testing.T) {
+func TestCobraInstallManifestSupportsNonDefaultBrowsers(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Chrome Beta manifest path test uses macOS browser roots")
 	}
@@ -200,19 +200,24 @@ func TestCobraInstallManifestSupportsChromeBeta(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := newRootCommand()
-	var output bytes.Buffer
-	cmd.SetOut(&output)
-	cmd.SetArgs([]string{"install-manifest", "--browser", "chrome-beta", "--path", targetPath})
-	if err := cmd.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(home, "Library/Application Support/Google/Chrome Beta/NativeMessagingHosts", host.NativeHostName+".json")
-	if strings.TrimSpace(output.String()) != want {
-		t.Fatalf("expected Chrome Beta manifest path %q, got %q", want, strings.TrimSpace(output.String()))
-	}
-	if _, err := os.Stat(want); err != nil {
-		t.Fatal(err)
+	for browser, root := range map[string]string{
+		"chrome-beta": chromeBetaRootForTest(home),
+		"helium":      heliumRootForTest(home),
+	} {
+		cmd := newRootCommand()
+		var output bytes.Buffer
+		cmd.SetOut(&output)
+		cmd.SetArgs([]string{"install-manifest", "--browser", browser, "--path", targetPath})
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		want := filepath.Join(root, "NativeMessagingHosts", host.NativeHostName+".json")
+		if strings.TrimSpace(output.String()) != want {
+			t.Fatalf("expected %s manifest path %q, got %q", browser, want, strings.TrimSpace(output.String()))
+		}
+		if _, err := os.Stat(want); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -465,6 +470,10 @@ func chromeBetaRootForTest(home string) string {
 	return filepath.Join(home, "Library/Application Support/Google/Chrome Beta")
 }
 
+func heliumRootForTest(home string) string {
+	return filepath.Join(home, "Library/Application Support/net.imput.helium")
+}
+
 func bitBrowserRootForTest(home, instance string) string {
 	return filepath.Join(home, "Library/Application Support/BitBrowser/BrowserCache", instance)
 }
@@ -670,6 +679,8 @@ func TestListInstalledChromeProfilesIncludesSupportedBrowsers(t *testing.T) {
 	writeLocalStateAtRoot(t, chromeBetaRootForTest(home), `{"profile":{"info_cache":{"Default":{"name":"Beta"}}}}`)
 	writeBitBrowserExtensionManifest(t, home, "abc123", "Default", "0.1.36")
 	writeLocalStateAtRoot(t, bitBrowserRootForTest(home, "abc123"), `{"profile":{"info_cache":{"Default":{"name":"Bit"}}}}`)
+	writeExtensionManifestAtRoot(t, heliumRootForTest(home), "Profile 1", defaultChromeExtensionID, "0.1.36")
+	writeLocalStateAtRoot(t, heliumRootForTest(home), `{"profile":{"info_cache":{"Profile 1":{"name":"Work"}}}}`)
 
 	profiles, err := listInstalledChromeProfiles()
 	if err != nil {
@@ -679,7 +690,7 @@ func TestListInstalledChromeProfilesIncludesSupportedBrowsers(t *testing.T) {
 	for _, profile := range profiles {
 		got[profile.Target] = profile
 	}
-	for _, target := range []string{"chrome:Default", "chrome-beta:Default", "bitbrowser:abc123:Default"} {
+	for _, target := range []string{"chrome:Default", "chrome-beta:Default", "helium:Profile 1", "bitbrowser:abc123:Default"} {
 		if _, ok := got[target]; !ok {
 			t.Fatalf("expected target %q in profiles: %+v", target, profiles)
 		}
@@ -689,6 +700,43 @@ func TestListInstalledChromeProfilesIncludesSupportedBrowsers(t *testing.T) {
 	}
 	if got["bitbrowser:abc123:Default"].BrowserInstance != "abc123" {
 		t.Fatalf("expected BitBrowser instance, got %+v", got["bitbrowser:abc123:Default"])
+	}
+	if got["helium:Profile 1"].BrowserName != "Helium" || got["helium:Profile 1"].DisplayName != "Work" {
+		t.Fatalf("expected Helium Work profile, got %+v", got["helium:Profile 1"])
+	}
+}
+
+func TestMacOSBrowserAppOpensSelectedBrowser(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("browser app names are macOS-specific")
+	}
+	t.Setenv("HOME", t.TempDir())
+	for selector, want := range map[string]string{"": "Google Chrome", "chrome-beta": "Google Chrome Beta", "helium": "Helium", "unknown": "Google Chrome"} {
+		if got := macOSBrowserApp(selector); got != want {
+			t.Fatalf("macOSBrowserApp(%q) = %q, want %q", selector, got, want)
+		}
+	}
+}
+
+func TestListInstalledChromeProfilesSkipsUnreadableBrowserRoot(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("multi-browser discovery test uses macOS browser roots")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeChromeExtensionManifest(t, home, "Default", "0.1.36")
+	writeExtensionManifestAtRoot(t, heliumRootForTest(home), "Default", defaultChromeExtensionID, "0.1.36")
+	if err := os.Chmod(chromeRootForTest(home), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(chromeRootForTest(home), 0o700) })
+
+	profiles, err := listInstalledChromeProfiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != 1 || profiles[0].Target != "helium:Default" {
+		t.Fatalf("expected only the readable Helium profile, got %+v", profiles)
 	}
 }
 

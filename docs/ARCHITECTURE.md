@@ -172,11 +172,11 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
   `finalize-tabs`、`name-session`、`cdp`、`move-mouse`、
   `wait-file-chooser`、`set-file-chooser-files`、`turn-ended`、`profiles`。
 - Multi-browser / multi-profile 支持：`open-browser-use profiles` 扫描 Chrome
-  Stable、Chrome Beta 和 BitBrowser user-data roots，在每个 profile 目录中
+  Stable、Chrome Beta、Helium 和 BitBrowser user-data roots（macOS 拒绝读取的 root 会被跳过），在每个 profile 目录中
   通过 CRX 与 unpacked 两条路径找到已经装好插件的 profile，附带 browser id、
   browser display name、profile directory 和展示名（来自
   `Local State.profile.info_cache`）。所有面向用户的命令支持
-  `--browser <chrome|chrome-beta|bitbrowser|displayName|instance>` 和
+  `--browser <chrome|chrome-beta|helium|bitbrowser|displayName|instance>` 和
   `--profile <directory|displayName>`：CLI 枚举 `socket-dir` 下的 `.sock`
   文件，对每个连通的 socket 调用 `getInfo`，把
   `metadata.extensionInstanceId` 反查到 browser/profile（grep 每个支持 browser
