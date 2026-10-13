@@ -26,7 +26,7 @@ Confirmed facts:
 - The public module export is `setupAtlasRuntime`.
 - The default backend selector is `chrome`.
 - The backend transport is JSON-RPC over a native pipe exposed through
-  `import.meta.__codexNativePipe.createConnection`.
+  `globalThis.nodeRepl.nativePipe.createConnection`.
 - The native pipe base is `codex-browser-use`.
 - The IAB route uses `codex-browser-use-iab`.
 - Each backend request is augmented with `session_id` and `turn_id` from
@@ -38,6 +38,22 @@ Confirmed facts:
   `connector_id: "browser-use"` and `persist: "always"`.
 - Playwright selector support injects a page global named
   `__codexPlaywrightInjected`.
+
+Re-verified on 2026-10-12 against ChatGPT `26.1007.30912`. Changes since the
+2026-04 snapshot:
+
+- The plugin moved from `plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/`
+  to `plugins/cache/openai-bundled/browser/26.1007.30912/`, and the bulk of the
+  runtime now lives in `scripts/browser-service.mjs` rather than
+  `scripts/browser-client.mjs`.
+- The app installs as `ChatGPT.app` while keeping bundle id `com.openai.codex`,
+  package name `openai-codex-electron`, and product name `Codex`.
+- The transport framing is unchanged: 4-byte native-endian length prefix plus a
+  UTF-8 JSON-RPC payload, with `8 MiB` as the default max frame and `5 s` as the
+  default `getInfo` timeout.
+- On macOS prod builds, `native/browser-use-peer-authorization.node` now gates
+  `accept()`, so an unprivileged process cannot complete `getInfo` against the
+  sockets at all.
 
 Inferred structure:
 
@@ -69,10 +85,14 @@ The bundle supports two backend families:
 - In-app browser backend:
   - Requested as `"iab"`.
   - Discovers backend info type `"iab"`.
-  - Uses `/tmp/codex-browser-use-iab.sock` or
-    `\\.\pipe\codex-browser-use-iab`.
+  - Lists candidates by reading the whole `/tmp/codex-browser-use/` directory
+    (or `\\.\pipe\codex-browser-use*` on Windows) rather than a single
+    well-known path. `BROWSER_USE_BACKEND_PATHS` can override the list.
   - Filters discovered IAB backends by `metadata.codexSessionId` matching the
-    current Codex session ID.
+    current Codex session ID, and additionally by
+    `metadata.codexAppBuildFlavor` when a build flavor is set.
+  - Reports discovery failures with explicit reasons: `missing-session-metadata`,
+    `no-iab-backends`, or `no-session-match`.
 
 The discovery pass also scans platform-specific `codex-browser-use*` pipe
 paths and races each connection attempt against a 3000 ms timeout.

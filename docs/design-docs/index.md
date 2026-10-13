@@ -11,3 +11,8 @@
 ## 初始文档
 
 - `core-beliefs.md`
+
+## 讨论中的设计
+
+- [Electron IAB 集成设计草案](electron-iab.md)：可引入 Electron app 的 npm
+  模块、示例 app、多 tab、命名 profile 和自动化协议边界。尚未实现。

@@ -8,21 +8,33 @@ backend, referred to as `iab` by `browser-client.mjs`.
 Confirmed against:
 
 - Browser client artifact:
-  `~/.codex/plugins/cache/openai-bundled/browser-use/0.1.0-alpha1/scripts/browser-client.mjs`
-- Codex app bundle:
-  `/Applications/Codex.app/Contents/Resources/app.asar`
-- Codex app version observed locally: `26.422.21637`
-- Main-process bundle area: `.vite/build/main-DCRKtMoS.js`
-- Renderer webview bundle area:
-  `webview/assets/use-model-settings-Ds_s4Jfi.js`
-- Runtime socket observed locally:
-  `/tmp/codex-browser-use/<uuid>.sock`, owned by the Codex app main process.
-- Runtime storage observed locally:
-  `~/Library/Application Support/Codex/Partitions/codex-browser-app/`
+  `~/.codex/plugins/cache/openai-bundled/browser/26.1007.30912/scripts/browser-client.mjs`
+  plus `browser-service.mjs`
+- ChatGPT app bundle:
+  `/Applications/ChatGPT.app/Contents/Resources/app.asar`
+- ChatGPT app version observed locally: `26.1007.30912`
+  (`codexBuildFlavor = prod`, `codexBuildNumber = 20156`), Chromium `155.0.8059.40`
+- Main-process bundle area: `.vite/build/main-CqEoQDOU.js`
+- Renderer webview bundles: `webview/assets/*.js`
+- Runtime sockets observed locally:
+  `/tmp/codex-browser-use/<uuid>.sock`, owned by the ChatGPT app main process.
+- Runtime storage: `~/Library/Application Support/Codex/Partitions/codex-browser-app/`
 
 The bundle is minified, so names such as `BrowserSessionRegistry` describe the
 observed class role rather than source-authored symbol names unless otherwise
 noted.
+
+### Renames Since The 2026-04 Snapshot
+
+| 2026-04 (`Codex.app`) | 2026-10 (`ChatGPT.app`) |
+| --- | --- |
+| app named `Codex.app` | app named `ChatGPT.app`, bundle id still `com.openai.codex` |
+| plugin path `.../browser-use/0.1.0-alpha1/` | plugin path `.../browser/26.1007.30912/` |
+| logic in `browser-client.mjs` | logic split into `browser-client.mjs` + `browser-service.mjs` |
+| `turnRoutes` | `sessionRoutes` |
+| `browser-use-turn-route-capture` | `browser-use-session-route-capture` |
+| `pageKey = ownerWebContentsId:conversationId` | `pageKey = conversationId\0browserTabId` |
+| one page per route | many tabs per route |
 
 ## Key Concepts
 
@@ -59,18 +71,32 @@ The renderer keeps browser sidebar webviews keyed by `conversationId`.
 
 ## Route Model
 
-IAB has two route keys:
+IAB has three route keys:
 
 ```text
-routeKey = `${windowId}:${conversationId}`
-turnRouteKey = `${conversationId}:${turnId}`
+routeKey    = `${windowId}:${conversationId}`
+routeTabKey = `${routeKey}\0${browserTabId}`
+pageKey     = `${conversationId}\0${browserTabId}`
 ```
 
 The `windowId` is the Electron `BrowserWindow.id`. The `conversationId` is the
-Codex conversation/session ID used by browser-use calls as `session_id`.
+ChatGPT conversation/session ID used by browser-use calls as `session_id`.
 
 When the browser-use client connects to an IAB backend, it filters discovered
-backends by `metadata.codexSessionId`, which is the `conversationId`.
+backends by `metadata.codexSessionId`, which is the `conversationId`. Discovery
+is now scoped explicitly:
+
+```text
+info.discoveryScope = "session"   // iab, mcpapps
+info.discoveryScope = "global"    // extension, cdp
+metadata = { codexAppBuildFlavor, codexAppSessionId, codexSessionId }
+```
+
+Session-scoped backends are only retained when `metadata.codexSessionId` matches
+the current Codex session and (when set) `codexAppBuildFlavor` matches the
+running build flavor. Non-matching candidate sockets are closed rather than
+exposed. Connection failures are attributed to concrete reasons such as
+`missing-session-metadata`, `no-iab-backends`, or `no-session-match`.
 
 ## Backend Lifecycle
 
@@ -80,10 +106,12 @@ responsibilities are split between two observed classes:
 ```text
 BrowserSessionRegistry
   browserUseNativePipeEnabled: boolean
-  backendStatesByRouteKey: Map<routeKey, BackendState>
+  sessionRoutes: Map<sessionId, SessionRoute>
+  backendStatesBySessionId: Map<sessionId, BackendState>
   hostsByRouteKey: Map<routeKey, BrowserUseHost>
-  turnRoutes: Map<turnRouteKey, RouteBinding>
   windows: Map<windowId, WindowRecord>
+  pendingLocalWorkSessionIds: Set<sessionId>
+  localWorkCodexSessionIds: Map<browserConversationId, conversationId>
 
 BrowserUseHost
   routeKey
@@ -96,55 +124,124 @@ BrowserUseHost
 for every registered `(windowId, conversationId)` route. Disabling it disposes
 all backend states.
 
-The backend is also turn-scoped. The renderer sends:
+### Session Route Capture (replaces turn-route capture)
+
+The old build bound command serving to a per-turn route:
 
 ```text
 browser-use-turn-route-capture
 browser-use-turn-route-release
-```
-
-The main process records:
-
-```text
 turnRouteKey = `${conversationId}:${turnId}`
 ```
 
-and resolves browser-use requests for a turn through that route binding. This is
-why IAB requests require both `session_id` and `turn_id`; a socket may advertise
-the same conversation, but actual command serving is constrained to the captured
-turn route.
+Those messages no longer exist. The 2026-10 build captures a **session** route
+instead, and drains it on inactivity rather than on turn release:
+
+```text
+browser-use-session-route-capture   -> captureSessionRoute({ conversationId, browserConversationId, disposeAfterSessionActivity, owner })
+browser-use-session-activity-ended  -> endSessionActivity({ conversationId })
+```
+
+`turn_id` is still present on individual calls and is still used for
+turn-scoped bookkeeping (`usedTurnIdsByConversationId`, `markTab`, `turnEnded`
+tab cleanup), but it no longer gates whether a socket can serve a request.
+
+`captureSessionRoute` resolves the owner through
+`getBrowserOwnerWebContentsForOrigin` and the window through
+`BrowserWindow.fromWebContents(owner)`, then records:
+
+```text
+sessionRoutes.set(sessionId, {
+  sessionId,
+  browserConversationId,
+  ownerWebContentsId: owner.id,
+  windowId,
+  disposeAfterSessionActivity,
+})
+```
+
+Notable behaviors layered on top:
+
+- **Owner rebind**: if the same session is captured from a different owner
+  `webContents`, the route owner is rebound in place and a
+  `session-route-owner-rebound` debug event is recorded, instead of dropping the
+  capture.
+- **Duplicate capture rejection**: a capture whose `pageKey` already has a live
+  page is ignored with `session-route-capture-ignored`.
+- **Cross-window rebind guard**: `bindSessionRouteOwner` refuses to move a route
+  to a different window while a live page exists
+  (`session-route-live-rebind-ignored`).
+- **Child sessions**: `captureChildSessionRoute` attaches a subagent session to
+  its parent's owner/window with `disposeAfterSessionActivity: true`.
+- **Local Work sessions**: `prepareLocalWorkSessionRoute` /
+  `cancelPendingLocalWorkSessionRoute` stage a route under a placeholder session
+  id (`Oq` prefix) before the real Codex session id is known, then
+  `bindSessionRouteOwner` moves the backend across.
+
+`endSessionActivity` releases session control, clears per-tab browser-use
+active state, and disposes the route only when
+`disposeAfterSessionActivity` was set. It is driven by the app-server
+`thread/status/changed` notification reaching `idle`, and
+`thread/archived` maps to `disposeConversation`.
+
+### Can-Serve Gate
+
+`canServeSession` decides whether a given backend state may answer a request:
+
+```text
+backendStatesBySessionId.get(backendSessionId) === state
+  AND ( conversationId === backendSessionId AND ensureSessionRoute(...)
+        OR pendingLocalWorkSessionIds.size === 1
+           AND pendingLocalWorkSessionIds.has(backendSessionId)
+           AND !sessionRoutes.has(conversationId) )
+```
+
+This is the modern replacement for the old turn-route constraint.
 
 ## Page Key
 
 `pageKey` is a Codex app internal page identifier. It is not an Electron or
 Chrome primitive.
 
-Observed shape:
+Observed shape (2026-10):
 
 ```text
-pageKey = `${ownerWebContentsId}:${conversationId}`
+pageKey = `${conversationId}\0${browserTabId}`
 ```
+
+The `\0` separator is a literal NUL byte produced by the `QB` helper; the
+composite `routeTabKey` uses the same convention via the `gq` helper.
 
 Where:
 
-- `ownerWebContentsId` is the `webContents.id` of the Codex UI hosting the
-  browser sidebar.
 - `conversationId` identifies the Codex conversation.
+- `browserTabId` identifies one browser sidebar tab, generated as
+  `browser-use:${randomUUID()}`.
 
-The page key identifies "the browser sidebar page for this conversation in this
-Codex UI owner".
+Because `browserTabId` is part of the key, one conversation can hold many
+concurrent sidebar pages. The page key identifies "the browser sidebar page for
+this tab in this conversation".
+
+The renderer-side debug/telemetry variant still uses the older three-part form:
+
+```text
+ZB(ownerWebContentsId, conversationId, browserTabId) = `${owner}:${conversationId}:${browserTabId}`
+```
+
+which is why debug events carry `ownerWebContentsId` alongside `pageKey`.
 
 ## Logical Tab Mapping
 
 The browser-use client sees only logical tab IDs. In IAB these are numeric
-`cdpTabId` values assigned by the Codex app.
+`cdpTabId` values assigned by the ChatGPT app.
 
 IAB keeps explicit maps:
 
 ```text
+tabIdsByRouteTabKey: Map<routeTabKey, cdpTabId>
 tabIdsByPageKey: Map<pageKey, cdpTabId>
-tabsById: Map<cdpTabId, { cdpTabId, pageKey, routeKey, webContents, title, url, active }>
-routeKeysByTabId: Map<cdpTabId, routeKey>
+tabsById: Map<cdpTabId, { cdpTabId, browserTabId, pageKey, routeKey, lifetime, sessionControlled, mark, title, url, active }>
+tabRuntimesById: Map<cdpTabId, { pageKey, webContents }>
 selectedTabIdsByRouteKey: Map<routeKey, cdpTabId>
 ```
 
@@ -154,13 +251,23 @@ Effective lookup:
 browser-use tab.id
   -> cdpTabId
   -> tabsById.get(cdpTabId)
-  -> { pageKey, routeKey, webContents }
+  -> { browserTabId, pageKey, routeKey }
+  -> tabRuntimesById.get(cdpTabId)
+  -> { pageKey, webContents }
   -> webContents.debugger.sendCommand(...) or webContents.executeJavaScript(...)
 ```
 
 So `cdpTabId` is not a native Chrome tab ID. It is a compatibility ID that lets
 the browser-use API look like a tabbed browser while the implementation targets
-Electron `webContents`.
+Electron `webContents`. `serializeTab` exposes both identities to the client:
+
+```text
+{ id: cdpTabId, providerTabId: browserTabId, sessionControlled, title, url, active }
+```
+
+`cdpTabId` allocation is keyed by `routeTabKey`, so the same conversation can
+hold several stable `cdpTabId`s at once. `tabIdsByPageKey` remains a secondary
+index used for page-scoped events such as `Page.navigationBlocked`.
 
 ## Native Pipe Transport
 
@@ -194,40 +301,117 @@ The main-process pipe server registers public methods from the IAB API object,
 so browser-use method names such as `getInfo`, `createTab`, `attach`,
 `detach`, and `executeCdp` dispatch directly into IAB handlers.
 
-On macOS packaged builds can enable peer authorization through:
+On macOS the packaged prod build loads peer authorization from:
 
 ```text
-/Applications/Codex.app/Contents/Resources/native/browser-use-peer-authorization.node
+/Applications/ChatGPT.app/Contents/Resources/native/browser-use-peer-authorization.node
 ```
+
+The policy is decided by `shouldIncludeBrowserUsePeerAuthorization(bundle, platform)`;
+the `CODEX_BROWSER_USE_PEER_AUTHORIZATION=1` env var can force it on. On
+non-darwin platforms the authorizer is a no-op that returns
+`{ authorized: true }`. In a packaged build with no readable package metadata the
+authorizer fails closed with `missing-package-build-flavor` and rejects peers.
 
 The addon authorizes the connecting process from the socket file descriptor.
 This is separate from browser profile isolation; it protects who can talk to the
 local IAB pipe.
 
-## Single-Page Route Semantics
+Practical consequence for tooling: on this macOS prod build, connecting to
+`/tmp/codex-browser-use/<uuid>.sock` with a plain socket client and sending
+`getInfo` does **not** produce a response. Observed results from an unprivileged
+probe were `timeout` or `write EPIPE` on every candidate socket, because the
+server drops unauthorized peers instead of replying with a JSON-RPC error. Only
+the in-app `globalThis.nodeRepl.nativePipe` bridge passes authorization.
 
-The current IAB route model appears to expose one active browser sidebar page
-per `(windowId, conversationId)` route.
+## Multi-Tab Route Semantics (2026-10 revision)
+
+> Superseded model: the pre-2026-10 build exposed one browser sidebar page per
+> `(windowId, conversationId)` route. The ChatGPT-branded build
+> (`26.1007.30912`) exposes a full multi-tab sidebar keyed by
+> `(conversationId, browserTabId)`. See
+> `notes/open-questions.md` for the retired single-page hypothesis.
+
+One conversation now owns **many** browser sidebar tabs. `windowId` still
+scopes the route, but tabs are no longer one-per-conversation.
 
 Observed state shapes:
 
 ```text
 BrowserSessionRegistry
+  sessionRoutes: Map<sessionId, SessionRoute>
   windows: Map<windowId, WindowState>
 
+SessionRoute
+  sessionId            // == conversationId for top-level sessions
+  browserConversationId
+  ownerWebContentsId
+  windowId
+  disposeAfterSessionActivity: boolean
+
 WindowState
-  threads: Map<conversationId, ThreadState>
+  threads: Map<pageKey, ThreadState>      // NOT keyed by conversationId
+  pages: Map<pageKey, PageRecord>
 
 ThreadState
+  conversationId
+  browserTabId        // per-tab identity
+  browserUseTabLifetime: "temporary" | "persistent"
+  isBrowserUsePage, isBrowserUseActive
   page: PageState | null
-
-Renderer webviews
-  Map<conversationId, webview>
 ```
 
-The code has `tabsById` and `selectedTabIdsByRouteKey`, but these wrap and track
-Electron pages as browser-use tabs. They do not imply a Chrome-like multi-tab UI
-inside one IAB route.
+Key identifier change — `pageKey` includes the tab:
+
+```text
+routeKey     = `${windowId}:${conversationId}`      // unchanged
+routeTabKey  = `${routeKey}\0${browserTabId}`       // new per-tab key
+pageKey      = `${conversationId}\0${browserTabId}` // was `${ownerWebContentsId}:${conversationId}`
+```
+
+`cdpTabId` is still the browser-use–facing numeric ID, still independent of
+Chrome. The map set is now genuinely multi-tab:
+
+```text
+tabIdsByRouteTabKey: Map<routeTabKey, cdpTabId>   // replaces tabIdsByPageKey as the create path
+tabIdsByPageKey:     Map<pageKey, cdpTabId>
+selectedTabIdsByRouteKey: Map<routeKey, cdpTabId> // selected tab within the route
+```
+
+`createTabForBrowserUse` mints a fresh `browserTabId` via
+`browser-use:${randomUUID()}` and calls
+`openPageForBrowserUse({ browserTabId, createPanelTab: true })`, so each
+`createTab` materializes a distinct sidebar panel tab. `getTabsForBrowserUse`
+walks **every** `ThreadState` whose `conversationId` matches the route, so the
+backend now reports a real tab list rather than a single synthetic page.
+
+`window.open` from a sidebar page is also admitted as a new sidebar tab
+(`admitBrowserTab()` + `close-browser-tab` messaging) when the opener is an Owl
+browser-sidebar host.
+
+## Tab Lifetime And Turn Cleanup
+
+Tab persistence is explicit and turn-scoped:
+
+```text
+lifetime = "temporary"   // agent-created via createTab
+lifetime = "persistent"  // pre-existing user tab, or released via markHandoff
+mark = { status: "handoff" | "deliverable", turnId }
+```
+
+`markTab` requires an integer `tabId` and a `turn_id`, and accepts only
+`handoff` or `deliverable`. It is advertised in `getInfo` via
+`apiSupportOverrides: { "Tab.markDeliverable": true, "Tab.markHandoff": true }`.
+
+At `turnEnded`:
+
+- a `handoff` mark on a **temporary** tab deletes the mark and leaves the tab open;
+- any other mark, or a `persistent` lifetime, calls `releaseTab` (tab survives
+  but leaves browser-use control);
+- everything else calls `closeTab`.
+
+Lifetime flips to `persistent` on `releasePageForBrowserUse`, which is the path
+used when a user takes a tab back over.
 
 ## Renderer Webview Lifecycle
 

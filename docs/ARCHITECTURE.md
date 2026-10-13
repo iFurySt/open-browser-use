@@ -242,6 +242,16 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
 可以自由调用；生产集成如果需要安全策略，应在上层 runtime 或 host 前置网关
 中实现。
 
+## Electron IAB 设计方向
+
+候选方案见 [Electron IAB 集成设计草案](design-docs/electron-iab.md)。第一阶段
+拟交付 Electron 主进程 npm 集成模块和独立运行的示例 app，按命名 profile
+共享登录态，任务 scope 隔离 tabs。候选底座是 `WebContentsView` 和
+`webContents.debugger`，复用 Open Browser Use 方法与事件契约。
+
+该方案处于讨论阶段，当前正式运行拓扑仍是上述 Chrome route。Electron
+集成包、IAB backend、连接认证和跨平台 bridge 尚未实现。
+
 ## 新项目需要补齐的内容
 
 - 核心产品面和运行拓扑。
