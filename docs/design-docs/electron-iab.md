@@ -311,9 +311,15 @@ DevTools 打开可能触发 debugger detach，运行中的命令必须感知
 IME 和跨域 iframe 行为必须实测。参见
 [webContents 输入 API](https://www.electronjs.org/docs/latest/api/web-contents#contentssendinputeventinputevent)。
 
-光标视觉反馈与输入执行分开：首版尚未提供 cursor overlay；后续可在受控页注入无宿主权限的 overlay，
-移动顺序号用于关联 arrival，隐藏页面不等待可见动画完成。Native view
-可能遮住宿主 DOM overlay，不能预设 React 浮层能画在网页之上。
+光标视觉反馈与输入执行分开：可选 `visualFeedback` 在 guest 的 isolated
+world/closed shadow 中绘制原 Browser Use 鼠标和内侧渐变边缘，无宿主
+IPC 或凭据。库默认关闭，宿主可分别开启 cursor/edgeGlow，按 scope 内
+明确 tab 标记活动；实际 CDP Input 更新位置并触发 1.2 秒短期提示。
+导航重置坐标，结束/关闭/销毁取消动画，隐藏页面不等待动画完成或抢焦点。
+Chrome cursor 素材和 spring renderer 为单一来源，生成 Electron 独立制品；
+使用 canvas 原图像素和 constructed CSS 兼容严格 CSP。页面可移除或伪造
+提示，因此它不参与认证。Native view 会遮住宿主 DOM overlay，光效必须
+在 guest 内绘制。示例 `操作提示` 开关控制两项视觉反馈。
 
 弹窗不能简单取消后另开同一 URL，否则可能丢失 opener 或 POST 语义。
 首版通过 `setWindowOpenHandler` 的自定义创建路径登记 view，并保留

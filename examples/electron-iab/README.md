@@ -38,6 +38,13 @@ page calls or synthetic DOM clicks. No socket listener is needed for normal app
 playback. The local fixture requires no account, API key or Chrome extension.
 Persistent profile data uses the example app's normal userData directory.
 
+“操作提示” shows the existing Browser Use mouse and inward gradient edges on the
+operated page. It is enabled in this demo and can be switched off during playback.
+Mouse positions follow real CLI/CDP input; main marks the operation lifecycle in
+`demo.mjs` and clears it in `finally`. The library defaults both effects to off
+and supports separate cursor/border options. See the package's
+[feedback API](../../packages/open-browser-use-electron/README.md#optional-operation-feedback).
+
 ## Code to reference
 
 - `main.mjs`: runtime, profile, scope, surface, sender-checked IPC and private CLI binding.
@@ -73,7 +80,8 @@ pnpm smoke:iab
 
 The real Electron smoke exercises all four reference transports, shared login,
 multi-tab ownership, hidden trusted input, socket rejection, popup lifecycle,
-panel bounds/resize/navigation, the five manual CLI-private steps, automated
+panel bounds/resize/navigation, optional feedback and the original cursor bitmap
+under strict CSP, the five manual CLI-private steps, automated
 replay and stop/cleanup. Reports and host/page/demo screenshots go to
 `.cache/iab-smoke/`. The disposable smoke profile is removed after Electron exits.
 

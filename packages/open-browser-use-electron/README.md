@@ -150,6 +150,44 @@ bookkeeping, not authorization. Without host bootstrap, commands fail rather
 than scan or fall back to Chrome. Go IAB transport is tested on macOS and
 cross-compiled for Linux/Windows; Windows IAB socket mode remains disabled.
 
+## Optional operation feedback
+
+Feedback is off by default. The host can enable the Browser Use cursor and an
+inward gradient border independently:
+
+```ts
+const iab = createIabRuntime({
+  appId: 'my-app', visualFeedback: { cursor: true, edgeGlow: true },
+});
+// Mark the full operation, including work between individual input commands.
+await task.visualFeedback.setActive(first.id, true);
+try {
+  // Run the authorized CLI/worker actions targeting first.id.
+} finally {
+  await task.visualFeedback.setActive(first.id, false);
+}
+await iab.visualFeedback.configure({ cursor: false, edgeGlow: false });
+```
+
+Accepted CDP `Input.*` calls also trigger a 1.2-second activity pulse. Mouse
+coordinates come from the real input, with presses snapping to the actual point.
+Activity belongs to the explicit target tab; selecting a surface does not move
+that activity to another page. The host must finish explicit activity in a
+`finally` block. Navigation resets pointer coordinates; deactivation, disable
+and page disposal remove decorations and cancel animation. Reduced-motion
+preferences disable travel, click-ring and border animation.
+
+The original extension's `cursor-chat.png`, 23×24 display size, geometry and
+spring renderer are reused. `scripts/generate-cursor.mjs` creates the standalone
+artifact from that source; build checks freshness. Run the generator after
+changing the Chrome cursor. The only image-carrier adaptation draws the original
+PNG pixels on canvas, allowing strict image CSP without weakening site policy.
+
+Rendering uses an isolated guest world and closed shadow DOM, with no host IPC
+or credentials. Pointer events pass through. This is a visual hint, not a secure
+trust indicator: sites can remove or imitate it. The example's “操作提示” checkbox
+enables/disables both effects during manual steps or automatic playback.
+
 ## Lifecycle and capability limits
 
 - `tabs.create/list/close`, `scope.call/dispose`, `surfaces.register` with

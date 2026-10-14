@@ -13,7 +13,7 @@
   "files": ["dist", "native", "scripts", "binding.gyp", "README.md"],
   "scripts": {
     "install": "node scripts/build-native.mjs",
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/generate-cursor.mjs --check && tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "prepack": "pnpm build",
     "test": "pnpm build && node --test test/*.test.mjs"

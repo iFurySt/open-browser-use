@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createConnection } from 'node:net';
 import { once } from 'node:events';
 import { frame } from '../../packages/open-browser-use-electron/dist/wire.js';
+import { cursorBitmap } from '../../packages/open-browser-use-electron/dist/cursor.generated.js';
 
 export async function runSmoke({ runtime, scope, fixture, surface, window, launch, present, savePage }) {
   const checks = [];
@@ -91,6 +92,54 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
   await action('select',a.id);
   await waitFor(()=>ui(`document.querySelector('[role="tab"][aria-selected="true"]')?.title === ${JSON.stringify(`${fixture.url}/login`)}`));
   check('browser panel: address navigation, history, reload, hide, restore and close');
+  await action('feedback',true);
+  await scope.visualFeedback.setActive(a.id,true);
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:80,y:80}});
+  const overlay = await evaluate(a.id,'(()=>{const e=document.getElementById("obu-iab-visual-feedback");return {visible:!!e,cursor:e?.dataset.cursorVisible,edge:e?.dataset.edgeGlow,x:e?.dataset.x,closed:e?.shadowRoot===null,isolated:typeof globalThis.__obuIabFeedback,hit:document.elementFromPoint(80,80)?.id}})()');
+  assert.equal(overlay.visible,true); assert.equal(overlay.cursor,'true'); assert.equal(overlay.edge,'true'); assert.equal(overlay.x,'80');
+  assert.equal(overlay.closed,true); assert.equal(overlay.isolated,'undefined'); assert.notEqual(overlay.hit,'obu-iab-visual-feedback');
+  const feedbackImage=await scope.call('executeCdp',{target:{tabId:a.id},method:'Page.captureScreenshot',commandParams:{format:'png'}});
+  await savePage(Buffer.from(feedbackImage.data,'base64'),'feedback.png');
+  await action('feedback',false);
+  assert.equal(await evaluate(a.id,'!!document.getElementById("obu-iab-visual-feedback")'),false);
+  await action('feedback',true);
+  await scope.visualFeedback.setActive(a.id,false); await scope.visualFeedback.setActive(b.id,true);
+  assert.equal(await evaluate(a.id,'!!document.getElementById("obu-iab-visual-feedback")'),false);
+  await scope.call('executeCdp',{target:{tabId:b.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:50,y:50}});
+  await runtime.visualFeedback.configure({cursor:false,edgeGlow:true});
+  assert.equal(await evaluate(b.id,'document.getElementById("obu-iab-visual-feedback").dataset.cursorVisible'),'false');
+  await runtime.visualFeedback.configure({cursor:true,edgeGlow:false});
+  assert.equal(await evaluate(b.id,'document.getElementById("obu-iab-visual-feedback").dataset.edgeGlow'),'false');
+  await scope.visualFeedback.setActive(b.id,false); await action('feedback',true);
+  check('visual feedback: isolated, nonblocking, scoped activity and independent/disabled options');
+  await scope.visualFeedback.setActive(a.id,true);
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Page.navigate',commandParams:{url:`${fixture.url}/strict-csp`}});
+  await waitFor(()=>evaluate(a.id,'location.pathname==="/strict-csp" && document.readyState==="complete" && !!document.getElementById("obu-iab-visual-feedback")').catch(()=>false));
+  assert.equal(await evaluate(a.id,'document.getElementById("obu-iab-visual-feedback").dataset.cursorVisible'),'false');
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:80,y:80}});
+  // Inspect through the trusted host's isolated world; the page cannot read the
+  // closed shadow. Verify the actual bitmap, not only that an overlay exists.
+  const guest = window.contentView.children.find(view=>view.webContents && view.webContents !== window.webContents).webContents;
+  const rendered = await guest.executeJavaScriptInIsolatedWorld(999,[{code:`(()=>{const canvas=globalThis.__obuIabFeedback.cursorLayer.querySelector('canvas');return {width:canvas.width,height:canvas.height,displayWidth:canvas.style.width,displayHeight:canvas.style.height,pixels:Array.from(canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data)}})()`}]);
+  assert.equal(rendered.width,cursorBitmap.width); assert.equal(rendered.height,cursorBitmap.height);
+  assert.equal(rendered.displayWidth,'23px'); assert.equal(rendered.displayHeight,'24px');
+  // Canvas may round translucent RGB by one byte through premultiplication;
+  // fully opaque pixels and alpha must retain the original asset exactly.
+  const original=Buffer.from(cursorBitmap.rgba,'base64');
+  for (let i=0;i<original.length;i+=4) {
+    assert.equal(rendered.pixels[i+3],original[i+3]);
+    if (original[i+3]===255) assert.deepEqual(rendered.pixels.slice(i,i+3),Array.from(original.subarray(i,i+3)));
+  }
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mousePressed',x:80,y:80,button:'left',buttons:1,clickCount:1}});
+  const ripple = await guest.executeJavaScriptInIsolatedWorld(999,[{code:`(()=>{const r=globalThis.__obuIabFeedback.ring.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`}]);
+  assert.ok(Math.abs(ripple.x-80)<0.01 && Math.abs(ripple.y-80)<0.01,'Click ripple remains centered while scaling');
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseReleased',x:80,y:80,button:'left',buttons:0,clickCount:1}});
+  const strictFeedbackImage=await scope.call('executeCdp',{target:{tabId:a.id},method:'Page.captureScreenshot',commandParams:{format:'png'}});
+  await savePage(Buffer.from(strictFeedbackImage.data,'base64'),'feedback-strict-csp.png');
+  await scope.visualFeedback.setActive(a.id,false);
+  await scope.call('executeCdp',{target:{tabId:a.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:80,y:80}});
+  await waitFor(()=>evaluate(a.id,'!document.getElementById("obu-iab-visual-feedback")'));
+  check('visual feedback: navigation resets coordinates, strict CSP renders, transient activity expires');
   assert.equal(await ui("document.querySelectorAll('[data-step]').length"),5);
   await assert.rejects(action('demo-step',2));
   const first = await action('demo-step',1); const second = await action('demo-step',2);

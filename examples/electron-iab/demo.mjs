@@ -1,6 +1,6 @@
 const labels = ['打开 Tab 1','打开 Tab 2','回到 Tab 1，点击按钮','回到 Tab 2，输入并提交','关闭所有标签'];
 
-export function createActionDemo({ cli, fixtureUrl, present, changed, paceMs = 1000 }) {
+export function createActionDemo({ cli, fixtureUrl, present, changed, paceMs = 1000, feedback, feedbackHoldMs = 0 }) {
   const state = { next:1, busy:false, playing:false, stopRequested:false, current:undefined, completed:[], results:[], tab1:undefined, tab2:undefined, message:'准备就绪', detail:undefined };
   const snapshot = () => ({...state,completed:[...state.completed],results:[...state.results]});
   const update = values => { Object.assign(state,values); changed(); };
@@ -48,23 +48,25 @@ export function createActionDemo({ cli, fixtureUrl, present, changed, paceMs = 1
     if (number===1 && state.next===6) update({next:1,completed:[],results:[],detail:undefined});
     if (!Number.isInteger(number) || number<1 || number>5 || (number!==5 && number!==state.next)) throw new Error('请按顺序执行步骤');
     update({busy:true,current:number,message:`${labels[number-1]}…`});
+    let feedbackTab;
+    const activate = async id => { feedbackTab=id; await feedback?.setActive(id,true); };
     try {
       let detail;
       switch(number) {
         case 1: {
-          const tab = await command(['open-tab',`${fixtureUrl}/Tab%201`]); state.tab1=tab.id; present(tab.id); detail={tab1:tab.id}; break;
+          const tab = await command(['open-tab',`${fixtureUrl}/Tab%201`]); state.tab1=tab.id; present(tab.id); await activate(tab.id); detail={tab1:tab.id}; break;
         }
         case 2: {
           await owned(state.tab1);
-          const tab = await command(['open-tab',`${fixtureUrl}/Tab%202`]); state.tab2=tab.id; present(tab.id); detail={tab2:tab.id}; break;
+          const tab = await command(['open-tab',`${fixtureUrl}/Tab%202`]); state.tab2=tab.id; present(tab.id); await activate(tab.id); detail={tab2:tab.id}; break;
         }
         case 3: {
-          const id = await owned(state.tab1); present(id); await click(id,'#increment');
+          const id = await owned(state.tab1); present(id); await activate(id); await click(id,'#increment');
           await waitFor(id,'Number(document.querySelector("#count").textContent)>0');
           detail=await evaluate(id,'({count:Number(document.querySelector("#count").textContent),trustedClick:window.trustedClick})'); break;
         }
         case 4: {
-          const id = await owned(state.tab2); present(id); await click(id,'#message');
+          const id = await owned(state.tab2); present(id); await activate(id); await click(id,'#message');
           await evaluate(id,'document.querySelector("#message").select()');
           await cdp(id,'Input.insertText',{text:'Hello from CLI'}); await click(id,'#submit');
           await waitFor(id,'document.querySelector("#submitted").textContent.includes("Hello from CLI")');
@@ -73,8 +75,12 @@ export function createActionDemo({ cli, fixtureUrl, present, changed, paceMs = 1
         case 5: await closeAll(); state.tab1=undefined; state.tab2=undefined; detail={tabs:await list()}; break;
       }
       update({next:number+1,completed:[...new Set([...state.completed,number])],results:[...state.results.filter(result=>result.step!==number),{step:number,detail}],detail,message:number===5?'演示完成':`${labels[number-1]} · 完成`});
+      if (feedbackTab && feedbackHoldMs>0 && feedback?.enabled()) await new Promise(resolve=>setTimeout(resolve,feedbackHoldMs));
     } catch(error) { update({message:error.message}); throw error; }
-    finally { update({busy:false,current:undefined}); }
+    finally {
+      if (feedbackTab) await feedback?.setActive(feedbackTab,false).catch(()=>{});
+      update({busy:false,current:undefined});
+    }
     return snapshot();
   }
   return {

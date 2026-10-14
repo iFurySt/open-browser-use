@@ -104,3 +104,22 @@ test('revocation during hidden view rendering prevents the pending mouse input',
   allowed = false; release(); await denied;
   assert.deepEqual(commands, ['Page.captureScreenshot']);
 });
+test('visual feedback is opt-in and explicit activity remains scoped to owned tabs', async t => {
+  const { runtime, adapter, a, b } = setup(t); const tab = await a.tabs.create();
+  await a.call('executeCdp',{target:{tabId:tab.id},method:'Input.insertText',commandParams:{text:'plain'}});
+  assert.equal(adapter.views[0].webContents.isolatedCalls.length,0);
+  await runtime.visualFeedback.configure({cursor:true,edgeGlow:true});
+  await assert.rejects(b.visualFeedback.setActive(tab.id,true),/NOT_OWNED/);
+  await a.visualFeedback.setActive(tab.id,true);
+  assert.equal(adapter.views[0].webContents.isolatedCalls[0].worldId,999);
+});
+test('revoking authorization while feedback renders prevents the actual input', async t => {
+  const { runtime, adapter, a } = setup(t); const tab = await a.tabs.create();
+  await runtime.visualFeedback.configure({cursor:true});
+  let release, allowed=true;
+  adapter.views[0].webContents.executeJavaScriptInIsolatedWorld = () => new Promise(resolve=>{release=resolve;});
+  const input=runtime.dispatch('a','executeCdp',{target:{tabId:tab.id},method:'Input.dispatchMouseEvent',commandParams:{type:'mouseMoved',x:20,y:20}},['page.control'],()=>allowed);
+  const denied=assert.rejects(input,/REVOKED/); await new Promise(resolve=>setImmediate(resolve));
+  allowed=false; release(true); await denied;
+  assert.ok(!adapter.views[0].webContents.debugger.commands.some(command=>command.method==='Input.dispatchMouseEvent'));
+});

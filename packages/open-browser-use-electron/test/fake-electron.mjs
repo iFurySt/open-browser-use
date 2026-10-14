@@ -19,6 +19,7 @@ export function fakeElectron() {
         session, debugger: debuggerApi, url: 'about:blank', destroyed: false,
         getTitle() { return this.url; }, getURL() { return this.url; }, isDestroyed() { return this.destroyed; },
         async loadURL(url) { this.url = url; }, close() { this.destroyed = true; this.emit('destroyed'); },
+        isolatedCalls: [], async executeJavaScriptInIsolatedWorld(worldId,scripts) { this.isolatedCalls.push({worldId,scripts}); return true; },
         setWindowOpenHandler(handler) { this.popup = handler; },
       });
       const view = { webContents: wc, setBounds(bounds) { this.bounds = bounds; }, setVisible(visible) { this.visible = visible; } };

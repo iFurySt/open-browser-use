@@ -172,3 +172,27 @@ app 只表达最重要的 main+CLI+private。原接入按钮改为五步动作�
 用户授权先提交、推送并创建 MR，再继续可选鼠标和内侧渐变操作反馈。
 首版提交前 `make ci` 通过，既有 18 项真实 Electron smoke 和原生五步验收
 记录保持有效。源码与文档纳入评审，未包含本机二进制、浏览器数据或凭据。
+
+首版提交 `6219075` 已推送到 `codex/electron-iab`，创建 PR #31。
+
+### 2026-10-14 可选操作反馈与原鼠标复用
+
+用户要求 AI 操作时可选显示既有 Browser Use 鼠标及页面内侧渐变色，并明确
+要求复用原鼠标样式。新增 `visualFeedback` 主进程选项及 scope 内目标 tab
+活动标记；库默认关闭，示例默认开启并保留运行中开关。CDP 输入使用真实
+坐标，demo 在 `finally` 清理整步活动，临时输入提示在 1.2 秒后结束。
+
+- `feedback.ts` 在 guest isolated world/closed shadow 渲染非交互提示；
+  不合成事件，不暴露 preload/IPC/凭据，也不改变站点 CSP 或认证流程。
+- `generate-cursor.mjs` 以 Chrome `content-cursor.js` 和 `cursor-chat.png`
+  为唯一来源生成 npm 独立制品。保留原 23×24 尺寸、变换与弹簧动画；仅将
+  图片载体适配为 canvas 呈现原像素，兼容 `img-src 'none'`。
+- 开关、导航、页面关闭与销毁清理反馈，尊重 reduced motion。反馈是页面
+  可以移除或伪造的体验提示。渲染后重新校验授权，防止撤销期间派发输入。
+- 点击波纹用独立 left/top 定位，避免 scale 连带放大位移。
+- README、设计、架构、前端、安全和 feature note 同步。
+
+`make ci` 通过，Electron 包 18 项测试通过；真实 Electron 44.7.0 / macOS
+arm64 smoke 20 项通过，覆盖严格 CSP 下实际 canvas 原图像素/尺寸、反馈
+隔离/关闭/目标归属/导航清理、真实可信输入和五步手动/自动/停止流程。
+原生窗口实际播放看到原鼠标和内侧渐变，Tab 2 显示 CLI 提交结果。

@@ -273,6 +273,11 @@ Windows socket adapter 尚未实现，私有描述符路径也需要实机验证
 global/child-target CDP、文件上传下载、clipboard、history 或 WebMCP；Chrome
 route 的既有能力和访问边界不变。Electron 包仍待单独配置发布流水线。
 
+可选 `visualFeedback` 在 guest isolated world 显示现有 Browser Use 鼠标和
+内侧渐变边缘。主进程标记 scope 内目标 tab 的操作生命周期；CDP 输入驱动
+坐标和短期活动。库默认关闭，示例提供开关。素材与动画从 Chrome cursor
+单一来源生成；视觉层不参与 transport 认证，也不暴露宿主能力。
+
 ## 新项目需要补齐的内容
 
 - 核心产品面和运行拓扑。
