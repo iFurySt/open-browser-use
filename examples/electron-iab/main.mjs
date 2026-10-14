@@ -21,7 +21,8 @@ async function main() {
   if (smoke) console.log('IAB smoke: Electron ready');
   let shuttingDown = false;
   const fixture = await startFixture();
-  const runtime = createIabRuntime({ appId: 'electron-example' });
+  let feedbackEnabled = true;
+  const runtime = createIabRuntime({ appId: 'electron-example', visualFeedback:{cursor:true,edgeGlow:true} });
   runtime.profiles.open({ id: 'work' });
   const scope = runtime.scopes.open({ id: 'example-task', profileId: 'work' });
   const window = new BrowserWindow({ width: 1240, height: 850, minWidth: 960, minHeight: 760,
@@ -44,7 +45,8 @@ async function main() {
   window.on('resize', resize); resize();
   const clients = createExampleClients({runtime,scopeId:scope.id,cliPath:resolve(here,'../../build/obu-iab'),directory:here});
   const runCli = args => clients.launchCli('private',args);
-  const demo = createActionDemo({cli:runCli,fixtureUrl:fixture.url,present,changed,paceMs:smoke?0:1000});
+  const demo = createActionDemo({cli:runCli,fixtureUrl:fixture.url,present,changed,paceMs:smoke?0:1000,
+    feedback:{setActive:(id,active)=>scope.visualFeedback.setActive(id,active),enabled:()=>feedbackEnabled},feedbackHoldMs:smoke?0:550});
   // Reference integrations are kept in code and smoke, separate from the demo UI.
   async function launch(mode) {
     const result = mode.startsWith('cli-')
@@ -60,12 +62,17 @@ async function main() {
   ipcMain.handle('iab-example:action', async (event, message) => {
     if (shuttingDown) return { tabs: [], selected: undefined };
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== hostUrl) throw new Error('Unauthorized renderer');
-    if ((demo.snapshot().busy || demo.snapshot().playing) && !['state','viewport','demo-stop'].includes(message?.action)) throw new Error('演示正在运行');
+    if ((demo.snapshot().busy || demo.snapshot().playing) && !['state','viewport','demo-stop','feedback'].includes(message?.action)) throw new Error('演示正在运行');
     switch (message?.action) {
       case 'state': {
         const tabs = scope.tabs.list(), tabId = selected; let history;
         if (tabId !== undefined) history = await selectedCdp('Page.getNavigationHistory',{},tabId).catch(() => undefined);
-        return {tabs,selected:tabId,demo:demo.snapshot(),canGoBack:!!history && history.currentIndex>0,canGoForward:!!history && history.currentIndex<history.entries.length-1};
+        return {tabs,selected:tabId,demo:demo.snapshot(),feedbackEnabled,canGoBack:!!history && history.currentIndex>0,canGoForward:!!history && history.currentIndex<history.entries.length-1};
+      }
+      case 'feedback': {
+        if (typeof message.value!=='boolean') throw new Error('Invalid feedback option');
+        feedbackEnabled=message.value;
+        await runtime.visualFeedback.configure({cursor:feedbackEnabled,edgeGlow:feedbackEnabled}); changed(); return {};
       }
       case 'viewport': {
         const bounds = message.value, [width,height] = window.getContentSize();

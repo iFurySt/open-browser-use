@@ -5,6 +5,7 @@ import type { Duplex } from 'node:stream';
 import type { WebContentsView, WebContents, Session, BaseWindow } from 'electron';
 import { IabConnections, type Backend, type IabEvent, type Operation, type GrantOptions } from './transport.js';
 import { frame } from './wire.js';
+import { FeedbackController, type VisualFeedbackOptions } from './feedback.js';
 
 export type ElectronAdapter = {
   createView(session: Session, contents?: WebContents): WebContentsView;
@@ -52,9 +53,18 @@ export class IabRuntime implements Backend {
   private nextTabId = 1;
   private closed = false;
   private disposing?: Promise<void>;
-  constructor(private adapter: ElectronAdapter, readonly appId: string) {
+  private feedbackController: FeedbackController;
+  constructor(private adapter: ElectronAdapter, readonly appId: string, feedback: VisualFeedbackOptions = {}) {
+    this.feedbackController = new FeedbackController(feedback);
     if (!appId || appId.length > 100) throw new Error('appId is required');
     this.events.setMaxListeners(256);
+  }
+  readonly visualFeedback = {
+    configure: (options: VisualFeedbackOptions) => { this.ensureOpen(); return this.feedbackController.configure(options); },
+    getOptions: () => this.feedbackController.configuration,
+  };
+  async setFeedbackActive(scopeId: string,tabId: number,active: boolean): Promise<void> {
+    this.ensureOpen(); await this.feedbackController.setActive(this.tab(scopeId,tabId).contents,active);
   }
   readonly profilesApi = {
     open: (options: { id: string; persistent?: boolean }): { id: string } => {
@@ -112,6 +122,7 @@ export class IabRuntime implements Backend {
     const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [] };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
+    this.feedbackController.register(wc);
     const listen = (target: EventEmitter, name: string, listener: (...args: any[]) => void) => {
       target.on(name, listener); tab.removers.push(() => target.off(name, listener));
     };
@@ -122,6 +133,8 @@ export class IabRuntime implements Backend {
     listen(wc, 'will-navigate', checkNavigation); listen(wc, 'will-frame-navigate', checkNavigation); listen(wc, 'will-redirect', checkNavigation);
     listen(wc, 'destroyed', () => this.forget(tab));
     listen(wc, 'did-finish-load', () => { tab.mouseReady = false; });
+    listen(wc, 'did-finish-load', () => this.feedbackController.resetDocument(wc));
+    listen(wc, 'did-navigate-in-page', () => this.feedbackController.resetDocument(wc));
     listen(wc, 'page-title-updated', () => this.emit(scopeId, 'onTabUpdated', { tab: this.snapshot(tab) }));
     for (const event of ['did-navigate', 'did-navigate-in-page', 'did-stop-loading']) {
       listen(wc, event, () => { if (!wc.isDestroyed()) this.emit(scopeId, 'onTabUpdated', { tab: this.snapshot(tab) }); });
@@ -154,6 +167,7 @@ export class IabRuntime implements Backend {
   listTabs(scopeId: string): Record<string, any>[] { return [...this.scope(scopeId).tabs.values()].map(t => this.snapshot(t)); }
   private forget(tab: Tab): void {
     if (!this.tabsById.delete(tab.id)) return;
+    this.feedbackController.release(tab.contents);
     this.states.get(tab.scopeId)?.tabs.delete(tab.id);
     for (const surface of this.surfaceStates.values()) if (surface.tabId === tab.id) {
       if (!surface.window.isDestroyed?.()) surface.window.contentView.removeChildView(tab.view);
@@ -187,6 +201,8 @@ export class IabRuntime implements Backend {
       await tab.contents.debugger.sendCommand('Page.captureScreenshot', { format: 'png' });
       tab.mouseReady = true;
     }
+    if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
+    if (method.startsWith('Input.')) await this.feedbackController.input(tab.contents,method,params);
     if (!authorized()) throw new Error('IAB_AUTH_REVOKED');
     const result = await tab.contents.debugger.sendCommand(method, params);
     if (method === 'Page.captureScreenshot') tab.mouseReady = true;
@@ -345,6 +361,9 @@ export class IabScope {
     create: (options: { url?: string; turnId?: string } = {}) => this.runtime.createTab(this.id, options),
     list: () => this.runtime.listTabs(this.id),
     close: (id: number) => this.runtime.closeTab(this.id, id),
+  };
+  readonly visualFeedback = {
+    setActive: (tabId: number,active: boolean) => this.runtime.setFeedbackActive(this.id,tabId,active),
   };
   call(method: string, params: Record<string, any> = {}): Promise<any> { return this.runtime.dispatch(this.id, method, params); }
   dispose(): Promise<void> { return this.runtime.disposeScope(this.id); }

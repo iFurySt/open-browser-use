@@ -4,6 +4,7 @@ export async function startFixture() {
   const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    if (url.pathname==='/strict-csp') response.setHeader('Content-Security-Policy',"default-src 'self'; style-src 'none'; img-src 'none'; script-src 'unsafe-inline'");
     if (url.pathname === '/login') response.setHeader('Set-Cookie', 'iab_example=logged-in; Path=/; SameSite=Lax');
     let name = url.pathname.slice(1) || 'Welcome';
     try { name = decodeURIComponent(name); } catch {}

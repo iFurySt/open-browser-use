@@ -47,3 +47,11 @@ node --check apps/chrome-extension/content-cursor.js
 运行 `pnpm example:iab` 查看示例；`pnpm smoke:iab` 验证真实网页与 IPC、
 窗口尺寸变化、地址历史、tabs 生命周期和 viewport 拒绝路径。
 宿主 renderer 截图不包含 native guest，因此同时保留 host 与 page 截图。
+
+“操作提示”开关控制 guest 内的 Browser Use 鼠标和页面内侧渐变边缘。库默认
+关闭，示例开启；在动作的 `finally` 清理活动状态，支持运行中关闭。
+鼠标素材、尺寸、变换和弹簧动画以 Chrome 的 `content-cursor.js` 与
+`images/cursor-chat.png` 为唯一来源；Electron 包脚本生成可独立发布的内嵌
+代码并检查是否过期。严格 img CSP 下使用 canvas 呈现原图像素。
+视觉层位于 isolated world/closed shadow，pointer-events:none；它是体验
+提示而非可信认证标记。截图检查包含正常页和 strict CSP 页。

@@ -9,6 +9,7 @@
 
 #result{margin:0;color:#617068;font-size:12px}details{margin-top:12px}summary{cursor:pointer;font-size:11px;color:#8a948e}details[hidden]{display:none}details pre{margin-top:10px!important}.result h2{font-size:12px;font-weight:500;color:#89918e}
 .demo-route{font-size:11px;color:#8a948e;margin:-14px 0 20px}.play{width:100%;padding:10px;border:0;border-radius:8px;background:#294c3d;color:#fff;font-weight:500}.play:hover{background:#35604c}.step{gap:10px;font-size:12px}.step-number{display:grid;place-items:center;flex:none;width:20px;height:20px;font:11px ui-monospace;color:#83918a;border:1px solid #e0e7e2;border-radius:50%}.step-state{margin-left:auto;color:#638771}.step.running{border-color:#8bab98;background:#edf5ef}.step.done .step-number{border-color:#a3c1ae;color:#4f765b}.method:disabled{opacity:.45}.method.done:disabled{opacity:.75}
+.feedback-toggle{display:flex;align-items:center;gap:7px;margin-top:12px;font-size:11px;color:#7b8981;cursor:pointer}.feedback-toggle input{accent-color:#547e65}
 </style>
 </head>
 <body>
@@ -17,6 +18,7 @@
   <div class="brand"><div class="brand-icon">◎</div><h1>Electron IAB</h1></div>
   <p class="demo-route">main → CLI · 私有通道</p>
   <button id="play" class="play">▶ 一键播放</button>
+  <label class="feedback-toggle"><input id="feedback-enabled" type="checkbox" checked>操作提示</label>
   <section><h2>演示步骤</h2><div class="methods">
     <button class="method step" data-step="1"><span class="step-number">1</span><span>打开 Tab 1</span><span class="step-state"></span></button>
     <button class="method step" data-step="2"><span class="step-number">2</span><span>打开 Tab 2</span><span class="step-state"></span></button>

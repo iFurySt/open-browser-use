@@ -21,6 +21,7 @@ async function refresh() {
   if (sequence !== refreshSequence) return;
   currentState = state;
   const demo = state.demo;
+  document.querySelector('#feedback-enabled').checked = !!state.feedbackEnabled;
   document.querySelector('#result').textContent = demo?.message ?? '准备就绪';
   const play = document.querySelector('#play');
   play.textContent = demo?.playing ? '■ 停止播放' : demo?.next>1 ? '↻ 重新播放' : '▶ 一键播放';
@@ -76,6 +77,7 @@ for (const button of document.querySelectorAll('[data-action]')) {
 }
 for (const step of document.querySelectorAll('[data-step]')) step.onclick = () => perform('demo-step',Number(step.dataset.step));
 document.querySelector('#play').onclick = () => perform(currentState?.demo.playing ? 'demo-stop' : 'demo-play');
+document.querySelector('#feedback-enabled').onchange = event => perform('feedback',event.target.checked);
 document.querySelector('#empty-play').onclick = () => currentState?.tabs.length ? perform('select',currentState.tabs.at(-1).id) : perform('demo-play');
 document.querySelector('#address-form').onsubmit = event => {
   event.preventDefault(); const value = address.value.trim(); if (!value) return;

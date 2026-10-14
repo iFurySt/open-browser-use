@@ -78,6 +78,12 @@ falls back to a permissive implementation.
 These protections do not add authentication to the Chrome native host. Existing
 Chrome sockets still have the local-account access boundary described above.
 
+Optional IAB operation feedback runs in an isolated guest world with a closed
+shadow and no host IPC, preload or credentials. Rendering does not synthesize
+input, weaken site CSP or authorize commands. Authorization is rechecked after
+async feedback rendering and before actual CDP input. Sites share the DOM and
+can remove or imitate decorations; feedback is not an authentication indicator.
+
 ## Chrome Extension Permissions
 
 The MV3 extension uses high-privilege Chrome APIs because browser control requires them:
