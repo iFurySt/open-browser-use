@@ -15,6 +15,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm test",
+    "example:iab": "pnpm --filter open-browser-use-electron... build && pnpm --filter @open-browser-use/electron-iab-example start",
+    "smoke:iab": "pnpm --filter open-browser-use-electron... build && pnpm --filter @open-browser-use/electron-iab-example smoke"
   }
 }

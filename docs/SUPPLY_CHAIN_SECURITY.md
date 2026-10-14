@@ -36,6 +36,12 @@
 
 ## 项目落地后建议继续做的事
 
+Electron IAB 首版使用 lockfile 固定的 Electron `44.7.0`、node-gyp `11.5.0`
+以及 Go `golang.org/x/sys v0.41.0`。原生 peer adapter 通过 Node-API 8 从仓库
+源码构建，不复制或分发参考 app 的闭源原生模块。宿主 ASAR 打包需 unpack
+自己的 `.node` 文件；当前没有跨平台 prebuilt addon 制品或 Electron 包的
+npm 发布任务，正式发布时应单独接入现有 SBOM/provenance 约定。
+
 - 锁定并提交项目真实依赖的 lockfile。
 - 让构建过程尽量可重复、可验证。
 - 如果条件允许，在部署链路里增加对 provenance 的校验。

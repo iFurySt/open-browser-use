@@ -15,6 +15,13 @@
 
 `open-browser-use` 是平台中立的浏览器操作方案，也是Codex.app最新发布的Chrome Browser Use的开源替代方案。背后的故事可以看这篇[Browser Use详解](https://www.ifuryst.com/blog/2026/open-browser-use/)文章。 技术方案采用的是浏览器插件和open-browser-use cli结合，可通过 JS/Python/Go SDK 或 CLI 的方式接入。
 
+Electron app 可以接入仓库中的
+[`open-browser-use-electron`](packages/open-browser-use-electron/README.md)，
+支持会话多 tab、命名 profile、私有通道、经过鉴权的 socket 和 `obu iab`
+命令。运行 `pnpm install && pnpm example:iab` 启动
+[参考 app](examples/electron-iab/README.md)，`pnpm smoke:iab` 执行真实 Electron
+集成验证。该首版功能已落源码，尚未发布 npm 包。
+
 https://github.com/user-attachments/assets/bcfba878-f6a8-44b9-b84b-29c7e0285687
 
 ## Quick Start

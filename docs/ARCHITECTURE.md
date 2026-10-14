@@ -1,9 +1,9 @@
 # 架构总览
 
 这个仓库当前目标是实现 Open Browser Use：一套开源 Browser Use 风格的
-Chrome 浏览器自动化基础设施。
+浏览器自动化基础设施，包含真实 Chrome route 和可嵌入 Electron 的 IAB。
 
-当前 `main` 分支只保留 Chrome route：MV3 Chrome extension + Go native
+Chrome route 使用 MV3 Chrome extension + Go native
 messaging host + SDK。这条路线用于接管用户真实 Chrome profile 中的 tabs、
 debugger、history 和 tab groups。
 
@@ -39,6 +39,12 @@ debugger、history 和 tab groups。
 - `packages/open-browser-use-go/`：Go SDK，Go import path 为
   `github.com/ifuryst/open-browser-use/packages/open-browser-use-go`，package
   name 为 `obu`。
+- `packages/open-browser-use-electron/`：Electron IAB 集成包，提供主进程
+  runtime、多 tab、surface、private/socket transport、Node client 和原生
+  peer adapter。Electron 由宿主提供，Node client 使用 `/client` 入口。
+- `examples/electron-iab/`：独立 Electron 动作演示 app，界面聚焦 main + CLI +
+  私有通道五步编排，代码保留 Node/CLI × private/socket 参考接入、本地
+  fixture 和真实 Electron smoke；不依赖 Chrome extension。
 - `skills/open-browser-use/`：面向 AI Agent 的 Open Browser Use skill，说明
   如何安装、验证和使用浏览器插件、CLI、SDK 与 Browser Use 风格协议。
 - `packages/`：其他跨应用复用的库、契约和共享能力。
@@ -242,15 +248,30 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
 可以自由调用；生产集成如果需要安全策略，应在上层 runtime 或 host 前置网关
 中实现。
 
-## Electron IAB 设计方向
+## Electron IAB 首版
 
-候选方案见 [Electron IAB 集成设计草案](design-docs/electron-iab.md)。第一阶段
-拟交付 Electron 主进程 npm 集成模块和独立运行的示例 app，按命名 profile
-共享登录态，任务 scope 隔离 tabs。候选底座是 `WebContentsView` 和
+实现与边界见 [Electron IAB 集成设计](design-docs/electron-iab.md)。首版交付
+Electron 主进程集成包和 `examples/electron-iab`，按命名 profile
+共享登录态，每个会话 scope 拥有多个独立 tabs。底座是 `WebContentsView` 和
 `webContents.debugger`，复用 Open Browser Use 方法与事件契约。
 
-该方案处于讨论阶段，当前正式运行拓扑仍是上述 Chrome route。Electron
-集成包、IAB backend、连接认证和跨平台 bridge 尚未实现。
+socket bridge 默认关闭；启用时必须经过原生 peer 身份检查和任务 lease
+认证，并持续校验 scope/tab ownership。身份 adapter 不可用时拒绝开放
+socket，保留宿主私有通道。macOS/Linux 使用内核 peer 身份和宿主登记的
+PID/UID/启动时间，随后完成 lease 握手；不以同 UID 或解释器路径作为授权。
+细节见
+[IAB 本地连接鉴权设计](design-docs/iab-transport-auth.md)。
+
+`obu iab` 通过继承 FD 3 得到私有 bootstrap，支持私有 duplex RPC，或先
+验证服务端身份后连接 socket。命令不扫描 Chrome registry，不接受 argv/env
+中的秘密。支持 info、ping、tabs、open-tab、navigate、close-tab、cdp、call
+和 turn-ended。Node worker 通过 `open-browser-use-electron/client` 获得现有
+SDK browser/tab helper。
+
+本地验证覆盖 Electron 44.7.0 / macOS arm64；Go 命令交叉编译 Linux/Windows。
+Windows socket adapter 尚未实现，私有描述符路径也需要实机验证。首版不暴露
+global/child-target CDP、文件上传下载、clipboard、history 或 WebMCP；Chrome
+route 的既有能力和访问边界不变。Electron 包仍待单独配置发布流水线。
 
 ## 新项目需要补齐的内容
 

@@ -43,15 +43,28 @@ Useful next checks:
 
 Direct JSON-RPC against the IAB sockets no longer works from an arbitrary
 process on macOS prod builds. The `browser-use-peer-authorization.node` addon
-gates `accept()`, and unauthorized peers are dropped silently (observed as
+checks peers after accept and before RPC frame parsing; unauthorized peers are
+dropped silently (observed as
 `timeout` / `write EPIPE` rather than a JSON-RPC error).
+
+Static verification on 2026-10-13 found audit-token access, signing identity
+imports and peer/parent/grandparent helper symbols. The broad mechanism is now
+supported by binary evidence; its exact native policy still needs verification.
 
 Useful next checks:
 
-- Enumerate the exact peer criteria the addon checks (code signature, audit
-  token, pid provenance).
+- Establish the exact signer/identifier combinations and ancestry conditions,
+  including devMode behavior; distinguish signing metadata retrieval from
+  signature validity enforcement.
 - Confirm the behavior on non-darwin platforms and on dev/alpha build flavors
   where `shouldIncludeBrowserUsePeerAuthorization` may return false.
+
+## Renderer And Input Snapshot Boundaries
+
+The renderer DOM maps, route-bearing partition encoding, translated Input
+commands and cursor-arrival payload retained in `runtime/iab-architecture.md`
+are now labeled as 2026-04 snapshots. Re-verify them against the multi-tab
+build before using those details as its current implementation contract.
 
 ## Chrome Process Lifecycle
 

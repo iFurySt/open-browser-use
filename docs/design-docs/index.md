@@ -12,7 +12,9 @@
 
 - `core-beliefs.md`
 
-## 讨论中的设计
+## 架构设计
 
-- [Electron IAB 集成设计草案](electron-iab.md)：可引入 Electron app 的 npm
-  模块、示例 app、多 tab、命名 profile 和自动化协议边界。尚未实现。
+- [Electron IAB 集成设计](electron-iab.md)：可引入 Electron app 的 npm
+  模块、示例 app、多 tab、命名 profile 和自动化协议边界。首版已实现，完整平台与发布链路待扩展。
+- [IAB 本地连接鉴权设计](iab-transport-auth.md)：原生 peer 身份、私有
+  credential 交付、scope lease、撤销和跨平台验证要求。首版已实现，完整平台与发布链路待扩展。

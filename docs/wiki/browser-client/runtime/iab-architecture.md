@@ -67,7 +67,9 @@ There are two important `webContents` roles in IAB:
 inside the Codex UI. It is similar to an iframe at the UI level, but Electron
 backs it with a separate guest `webContents`.
 
-The renderer keeps browser sidebar webviews keyed by `conversationId`.
+The current backend distinguishes browser sidebar tabs by `browserTabId` within
+each `conversationId`. The renderer lifecycle snippets later on this page are
+explicitly labeled as the older 2026-04 snapshot where applicable.
 
 ## Route Model
 
@@ -310,7 +312,7 @@ On macOS the packaged prod build loads peer authorization from:
 The policy is decided by `shouldIncludeBrowserUsePeerAuthorization(bundle, platform)`;
 the `CODEX_BROWSER_USE_PEER_AUTHORIZATION=1` env var can force it on. On
 non-darwin platforms the authorizer is a no-op that returns
-`{ authorized: true }`. In a packaged build with no readable package metadata the
+`{ authorized: true }`. In a macOS packaged build with no readable package metadata the
 authorizer fails closed with `missing-package-build-flavor` and rejects peers.
 
 The addon authorizes the connecting process from the socket file descriptor.
@@ -321,8 +323,44 @@ Practical consequence for tooling: on this macOS prod build, connecting to
 `/tmp/codex-browser-use/<uuid>.sock` with a plain socket client and sending
 `getInfo` does **not** produce a response. Observed results from an unprivileged
 probe were `timeout` or `write EPIPE` on every candidate socket, because the
-server drops unauthorized peers instead of replying with a JSON-RPC error. Only
-the in-app `globalThis.nodeRepl.nativePipe` bridge passes authorization.
+server drops unauthorized peers instead of replying with a JSON-RPC error. The
+in-app `globalThis.nodeRepl.nativePipe` bridge is an observed authorized path;
+the complete set of authorized client entry points has not been tested.
+
+### Peer Authorization Static Evidence 2026-10-13
+
+Re-read from the installed main bundle and native addon:
+
+- `handleSocketConnection` calls `socketPeerAuthorizer` before it adds the
+  socket to the client maps or registers its data handler. Exceptions and an
+  unauthorized result call `socket.destroy()` immediately. This is a gate
+  **after OS accept, before frame parsing**, not a guarantee that an unauthorized
+  same-user process's `connect()` syscall itself fails.
+- The main-process wrapper passes the accepted socket fd and the dev-mode
+  boolean into `authorizeSocketPeer(fd, devMode)`.
+- Native imports include `getsockopt`, `audit_token_to_pid`,
+  `SecCodeCopyGuestWithAttributes`, `SecCodeCopySigningInformation`,
+  `kSecGuestAttributeAudit`, `kSecGuestAttributePid` and `proc_pidinfo`.
+- Native diagnostics identify `LOCAL_PEERTOKEN`, `teamId`, `signingIdentifier`,
+  peer/parent/grandparent identities, `untrusted-process-ancestry`,
+  `missing-code-signing-identity` and `untrusted-code-signing-identity`.
+- Exported helper symbols include
+  `extension_host_copy_code_identity_for_audit_token` and
+  `extension_host_copy_code_identity_for_audit_token_at_depth`.
+- Embedded identifiers include the Codex app variants and runtime/CLI/agent
+  identities. Their precise allowlist combinations and dev-mode behavior remain
+  to be established; a binary string is not proof that an identifier alone is
+  sufficient for authorization.
+
+The evidence supports audit-token-based peer identity plus signing/ancestry
+checks. It does not establish every branch of the native policy, or prove that
+reading signing metadata performs a complete signature validity check.
+
+Addon SHA-256 for this inspection:
+`d3b29939c28cb1ec1fcef72c35e9c5a6a34d2ad837beb387a83a6554105ae693`.
+Only static symbols and curated conclusions are retained; the binary is not
+copied into the repository. The proposed open-source policy is tracked
+separately in [IAB local transport authentication](../../../design-docs/iab-transport-auth.md).
 
 ## Multi-Tab Route Semantics (2026-10 revision)
 
@@ -413,7 +451,11 @@ At `turnEnded`:
 Lifetime flips to `persistent` on `releasePageForBrowserUse`, which is the path
 used when a user takes a tab back over.
 
-## Renderer Webview Lifecycle
+## Renderer Webview Lifecycle 2026-04 Snapshot
+
+The following DOM maps and attach snippets describe the original single-page
+build. They have not been re-verified as the current multi-tab renderer contract.
+Use the current route/tab maps above for the 2026-10 backend model.
 
 The renderer owns the DOM-side `<webview>` objects. It keeps maps by
 `conversationId`:
@@ -446,7 +488,7 @@ panel bounds. If browser-use is active while the panel is hidden, the container
 is kept as an almost invisible fixed element so the guest page stays alive and
 automation can still target it.
 
-## Webview Attach Handoff
+## Webview Attach Handoff 2026-04 Snapshot
 
 The main process listens to the owner `webContents`:
 
@@ -481,7 +523,9 @@ runtime sync.
 Electron uses `partition` as a browser storage boundary. A persistent partition
 is a named profile-like storage bucket.
 
-The renderer initially creates webviews with a route-bearing partition:
+The renderer initially created webviews with the route-bearing partition below
+in the 2026-04 snapshot. Its exact creation/handoff encoding has not been
+re-verified for the newer multi-tab renderer:
 
 ```text
 persist:codex-browser-app-route:<encoded conversationId>
@@ -536,8 +580,10 @@ webContents.debugger.sendCommand(method, commandParams)
 Debugger `message` events are re-emitted to browser-use clients as CDP events
 with the logical `tabId`.
 
-Some `Input.*` CDP commands are special. IAB does not forward all of them to
-Chromium directly. It supports a small translated set:
+In the original 2026-04 input implementation, some `Input.*` CDP commands were
+special. It did not forward all of them to Chromium directly and supported a
+small translated set. The translation details below have not been re-verified
+against the newer build:
 
 ```text
 Input.dispatchKeyEvent
@@ -560,7 +606,11 @@ Navigation commands are also checked before execution. When a browser-use CDP
 command implies navigation, IAB asks the browser sidebar manager to assert and
 track the pending navigation for the target `pageKey`.
 
-## Cursor Handshake
+## Cursor Handshake 2026-04 Snapshot
+
+The flow below records the original turn-route handshake. The current backend
+captures session routes; the exact renderer arrival payload still needs a new
+verification before treating this old handshake as current.
 
 IAB also mirrors browser-use cursor state into the renderer. A cursor command
 does not only call CDP. The backend sends:
@@ -586,12 +636,13 @@ page is a guest webview.
 
 ```text
 agent.browser.tabs.new()
-  -> browser-client.mjs JSON-RPC over native pipe
-  -> Codex.app IAB backend for routeKey = windowId:conversationId
-  -> open or find ThreadState.page for conversationId
-  -> attach renderer <webview>
-  -> receive guest webContents
-  -> assign or reuse cdpTabId
+  -> browser client/service JSON-RPC over an authorized native pipe
+  -> ChatGPT.app IAB backend for the captured session route
+  -> mint browserTabId = browser-use:<uuid>
+  -> pageKey = conversationId + NUL + browserTabId
+  -> openPageForBrowserUse({ browserTabId, createPanelTab: true })
+  -> attach the new tab's guest webContents
+  -> assign cdpTabId indexed by routeTabKey
   -> return logical tab info to browser-use client
 ```
 
@@ -601,6 +652,7 @@ For later commands:
 agent/browser-use command with tab.id and turn_id
   -> cdpTabId
   -> tabsById
+  -> tabRuntimesById
   -> Electron guest webContents
   -> debugger CDP command, translated page JavaScript, or navigation call
 ```
@@ -608,22 +660,29 @@ agent/browser-use command with tab.id and turn_id
 ## Architecture Sketch
 
 ```text
-Codex BrowserWindow #12
+ChatGPT BrowserWindow #12
   owner webContents #100
-    Codex React UI
+    ChatGPT UI
       conversation A
-        pageKey = "100:A"
         routeKey = "12:A"
-        <webview partition="persist:codex-browser-app">
+        sidebar tab A1
+          browserTabId = browser-use:<uuid-A1>
+          pageKey = A + NUL + browserTabId
           guest webContents #201
           logical cdpTabId = 1
-
-      conversation B
-        pageKey = "100:B"
-        routeKey = "12:B"
-        <webview partition="persist:codex-browser-app">
+        sidebar tab A2
+          browserTabId = browser-use:<uuid-A2>
+          pageKey = A + NUL + browserTabId
           guest webContents #202
           logical cdpTabId = 2
+
+      conversation B
+        routeKey = "12:B"
+        sidebar tab B1
+          browserTabId = browser-use:<uuid-B1>
+          pageKey = B + NUL + browserTabId
+          guest webContents #203
+          logical cdpTabId = 3
 
 Shared browser storage:
   ~/Library/Application Support/Codex/Partitions/codex-browser-app/
@@ -634,30 +693,25 @@ Shared browser storage:
 ```text
 Renderer
   browser-sidebar-state
-    -> ensure hidden <webview> for conversationId
-    -> <webview
-         data-browser-sidebar-conversation-id=conversationId
-         partition=persist:codex-browser-app-route:<conversationId>
-       >
+    -> render sidebar pages by conversation and browserTabId
+    -> selected tab is a presentation choice, not the entire page collection
 
 Main process
-  will-attach-webview
-    -> decode conversationId from partition
-    -> rewrite partition/session to persist:codex-browser-app
-    -> configure preload/sandbox/contextIsolation
+  captureSessionRoute
+    -> resolve owner and window for the session
+    -> canServeSession checks the session binding
 
-  did-attach-webview
-    -> PageState.view.webContents = guestWebContents
-    -> pageKey = ownerWebContents.id + ":" + conversationId
-    -> BrowserSessionRegistry.recordGuestAttached(...)
+  new sidebar tab
+    -> pageKey = conversationId + NUL + browserTabId
+    -> associate that page with its guest webContents
 
 IAB API
   createTab(session_id, turn_id)
-    -> resolve turnRouteKey
+    -> resolve session route
     -> open/find BrowserUseHost
-    -> open/find PageState
-    -> updateTabForPage(page, routeKey)
-    -> return { id: cdpTabId, title, url, active }
+    -> create a fresh browserTabId and panel page
+    -> record routeTabKey -> cdpTabId and tab runtime
+    -> return { id: cdpTabId, providerTabId: browserTabId, ... }
 
   executeCdp(tabId, method, params)
     -> validate tab belongs to route
@@ -667,13 +721,16 @@ IAB API
 
 ## Practical Interpretation
 
-- Browser-use clients only receive `tab.id`, which is IAB's `cdpTabId`.
-- `pageKey` and `webContents` remain Codex.app internals.
+- Browser-use tab records include numeric `tab.id` (`cdpTabId`) and the provider's
+  `providerTabId` (`browserTabId`).
+- `pageKey` and `webContents` remain app internals.
 - `windowId` keeps browser-use commands bound to the correct Codex desktop
   window.
-- `turn_id` keeps commands bound to the active turn route, not just the
-  conversation.
-- One `(windowId, conversationId)` route maps to one browser sidebar page in the
-  observed implementation.
+- The current serving gate uses the captured session route. `turn_id` remains
+  relevant to marks and cleanup, not peer identity authentication.
+- One `(windowId, conversationId)` route owns multiple sidebar tabs in the
+  2026-10 build; each page has its own browserTabId and guest webContents.
+- On the inspected macOS prod build, native peer authorization precedes RPC
+  parsing. Socket discovery metadata is not an authorization credential.
 - Browser state such as cookies is shared across IAB pages through the
   `persist:codex-browser-app` partition.

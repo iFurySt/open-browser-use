@@ -9,6 +9,8 @@ Security fixes are expected to cover the current Chrome route:
 - MV3 Chrome extension under `apps/chrome-extension/`.
 - Go native host and CLI under `cmd/open-browser-use/` and `internal/`.
 - JavaScript and Python SDK packages under `packages/`.
+- Electron IAB runtime and Node-API peer adapter under
+  `packages/open-browser-use-electron/`, plus `obu iab` commands.
 - Installer, manifest, release, and skill documentation that affects how users enable browser control.
 
 Experimental references, reverse-engineering notes, and archived planning material are useful context, but they are not independently supported interfaces unless they are wired into the current route.
@@ -45,6 +47,36 @@ The Go native host bridges Chrome Native Messaging stdio to a local Unix socket.
 - The CLI may scan the socket directory when the active registry is missing or stale, so callers should treat access to the user's local account as access to the browser automation channel.
 
 Planned hardening includes client tokens, peer validation, safer stale-socket handling, and security-focused failure-path tests.
+
+### IAB Transport
+
+The [IAB local transport](design-docs/iab-transport-auth.md) requires
+native peer identity checks and a host-issued, expiring scope lease before any
+browser method or event is exposed. A scope may own multiple tabs; each command
+and event must stay within the authenticated scope and its allowed operations.
+Socket paths and discovery metadata do not convey authorization.
+
+The bridge is disabled by default and fails closed when its required
+identity adapter is unavailable. Credentials travel through host-controlled
+private channels rather than socket registries, command arguments or logs.
+Clients must also verify the registered server identity before sending a secret.
+Shared browser profiles remain shared site-data identities, not tenant isolation.
+
+The first adapter uses host-managed process registration: kernel PID/UID and
+process start time, with an expiring 256-bit lease supplied over a private
+descriptor. macOS obtains the socket peer through LOCAL_PEERTOKEN; Linux uses
+SO_PEERCRED. The host chooses trusted commands/scripts; this is not a sandbox
+for a hostile credential holder or a compromised host process. Signing-based
+allowlists are not implemented. Windows socket mode fails closed.
+
+IAB commands only accept host-provided bootstrap and do not scan Chrome socket
+registries. Scope and global-CDP rejection happen at the server even if a client
+bypasses its own wrappers. Revocation stops queued commands and event forwarding;
+completed page effects cannot be undone. Native identity lookup failure never
+falls back to a permissive implementation.
+
+These protections do not add authentication to the Chrome native host. Existing
+Chrome sockets still have the local-account access boundary described above.
 
 ## Chrome Extension Permissions
 
