@@ -1,0 +1,14 @@
+{
+  "name": "@open-browser-use/electron-iab-example",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "build:cli": "go build -o ../../build/obu-iab ../../cmd/open-browser-use",
+    "start": "pnpm build:cli && electron .",
+    "smoke": "pnpm build:cli && node run-smoke.mjs"
+  },
+  "dependencies": { "open-browser-use-electron": "workspace:*" },
+  "devDependencies": { "electron": "44.7.0" }
+}

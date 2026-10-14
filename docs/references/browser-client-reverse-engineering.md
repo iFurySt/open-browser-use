@@ -26,7 +26,9 @@ Confirmed facts:
 - The public module export is `setupAtlasRuntime`.
 - The default backend selector is `chrome`.
 - The backend transport is JSON-RPC over a native pipe exposed through
-  `globalThis.nodeRepl.nativePipe.createConnection`.
+  `import.meta.__codexNativePipe.createConnection` in the initial artifact,
+  replaced by `globalThis.nodeRepl.nativePipe.createConnection` in the
+  2026-10 build.
 - The native pipe base is `codex-browser-use`.
 - The IAB route uses `codex-browser-use-iab`.
 - Each backend request is augmented with `session_id` and `turn_id` from
@@ -52,8 +54,14 @@ Re-verified on 2026-10-12 against ChatGPT `26.1007.30912`. Changes since the
   UTF-8 JSON-RPC payload, with `8 MiB` as the default max frame and `5 s` as the
   default `getInfo` timeout.
 - On macOS prod builds, `native/browser-use-peer-authorization.node` now gates
-  `accept()`, so an unprivileged process cannot complete `getInfo` against the
-  sockets at all.
+  the accepted connection before RPC parsing, so an unauthorized process cannot
+  complete `getInfo` against the sockets. This does not imply its OS-level
+  `connect()` call always fails.
+
+Static peer-authorization inspection on 2026-10-13 additionally found audit
+token access, code-signing identity imports and process-ancestry helper symbols.
+The exact native allowlist and validity checks remain partially unverified; see
+the evidence boundaries in `docs/wiki/browser-client/runtime/iab-architecture.md`.
 
 Inferred structure:
 

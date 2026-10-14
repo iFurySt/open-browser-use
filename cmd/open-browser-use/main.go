@@ -91,6 +91,7 @@ func newRootCommand() *cobra.Command {
 		newCallCommand(),
 		newRunCommand(),
 		newMCPCommand(),
+		newIabCommand(),
 		newOpenTabCommand(),
 		newNavigateCommand(),
 		newSimpleRPCCommand("ping", "ping", "Ping the browser backend"),

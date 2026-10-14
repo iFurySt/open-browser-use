@@ -21,6 +21,13 @@ capability recently shipped in Codex.app. For the story behind it, see the
 Under the hood, it pairs a browser extension with the `open-browser-use` CLI.
 You can integrate it through the JavaScript SDK, Python SDK, Go SDK, or the CLI.
 
+For an embedded Electron browser, the workspace now includes
+[`open-browser-use-electron`](packages/open-browser-use-electron/README.md):
+multi-tab task scopes, named profiles, private tool channels and authenticated
+local sockets. Run `pnpm install && pnpm example:iab` to try the
+[reference app](examples/electron-iab/README.md), or `pnpm smoke:iab` for real
+Electron integration checks. This source feature is not yet published to npm.
+
 https://github.com/user-attachments/assets/bcfba878-f6a8-44b9-b84b-29c7e0285687
 
 ## Quick Start

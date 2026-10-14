@@ -1,0 +1,26 @@
+{
+  "name": "open-browser-use-electron",
+  "version": "1.0.0",
+  "description": "Embeddable multi-tab Electron browser with private RPC and authenticated local sockets.",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./client": { "types": "./dist/client.d.ts", "import": "./dist/client.js" }
+  },
+  "files": ["dist", "native", "scripts", "binding.gyp", "README.md"],
+  "scripts": {
+    "install": "node scripts/build-native.mjs",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "prepack": "pnpm build",
+    "test": "pnpm build && node --test test/*.test.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "repository": { "type": "git", "url": "git+https://github.com/iFurySt/open-browser-use.git", "directory": "packages/open-browser-use-electron" },
+  "peerDependencies": { "electron": ">=30 <45" },
+  "dependencies": { "open-browser-use-sdk": "workspace:^", "node-gyp": "11.5.0" },
+  "devDependencies": { "@types/node": "^22.10.2", "typescript": "^5.7.2", "electron": "44.7.0" }
+}
