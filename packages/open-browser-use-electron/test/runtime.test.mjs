@@ -11,6 +11,30 @@ function setup(t) {
   const b = runtime.scopes.open({ id: 'b', profileId: 'work' });
   t.after(() => runtime.dispose()); return { runtime, adapter, a, b };
 }
+test('tab loading, redirects, failure and retry are scoped and reset on navigation', async t => {
+  const { runtime, adapter, a, b } = setup(t);
+  const x=await a.tabs.create(), y=await b.tabs.create();
+  const wc=adapter.views[0].webContents, events=[];
+  runtime.subscribe(event=>{if(event.method==='onTabUpdated') events.push(event);});
+  wc.emit('did-start-navigation',{url:'https://example.com/',isMainFrame:true,isSameDocument:false});
+  wc.emit('did-start-loading');
+  assert.equal(a.tabs.list()[0].loading,true);
+  assert.equal(a.tabs.list()[0].pendingUrl,'https://example.com/');
+  assert.equal(b.tabs.list()[0].loading,false);
+  wc.emit('did-redirect-navigation',{},'https://example.com/next',false,true);
+  assert.equal(a.tabs.list()[0].pendingUrl,'https://example.com/next');
+  wc.emit('did-fail-load',{},-105,'ERR_NAME_NOT_RESOLVED','https://example.com/next',true);
+  wc.emit('did-stop-loading');
+  assert.equal(a.tabs.list()[0].loading,false);
+  assert.equal(a.tabs.list()[0].pendingUrl,undefined);
+  assert.equal(a.tabs.list()[0].loadError.code,-105);
+  wc.emit('did-start-navigation',{},'https://example.org/',false,true);
+  assert.equal(a.tabs.list()[0].loadError,undefined);
+  wc.emit('did-fail-load',{},-3,'ERR_ABORTED','https://example.org/',true);
+  wc.emit('did-fail-load',{},-105,'ERR_NAME_NOT_RESOLVED','https://frame.example/',false);
+  assert.equal(a.tabs.list()[0].loadError,undefined);
+  assert.ok(events.every(event=>event.scopeId==='a' && event.params.tab.id===x.id && event.params.tab.id!==y.id));
+});
 test('one scope owns independent tabs; profiles share storage, not tab ownership', async t => {
   const { runtime, adapter, a, b } = setup(t);
   const x = await a.tabs.create({ url: 'https://example.com/a' });

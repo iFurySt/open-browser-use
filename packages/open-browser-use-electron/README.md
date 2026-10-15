@@ -19,7 +19,8 @@ pnpm smoke:iab
 ```
 
 The [Electron example](../../examples/electron-iab/README.md) visibly demonstrates
-Electron main + CLI + private channel through five manual or automated actions.
+Electron main + CLI + private channel through five manual or automated actions,
+retaining all three tabs for inspection afterward.
 Node/CLI × private/socket reference integrations remain in code and smoke tests.
 
 Requirements: Node 22+, pnpm 8.15.9, Go 1.25.10+ for the example CLI, and a C++
@@ -62,6 +63,15 @@ Use a unique appId per host integration. Different scopes can use the same
 profile; different accounts should use different profiles. Scope ownership
 isolates API access, while shared profile cookies and storage remain shared.
 Each scope can hold 32 tabs; one runtime can hold 128.
+
+Tab snapshots from `scope.tabs.list()`, `getTabs`, and `onTabUpdated` include
+`loading` (Electron's loading lifecycle), optional `pendingUrl` during main-frame
+navigation/redirect, and optional `loadError: { code, description, url }`.
+A new main-frame navigation clears the previous error; iframe failures and
+aborted/replaced navigations do not mark the whole tab as failed. Hosts can
+render loading immediately from these snapshots without awaiting a page command.
+The example separately normalizes user-entered addresses; the runtime still
+requires an explicit permitted URL.
 
 ## Private tool process
 
@@ -152,12 +162,13 @@ cross-compiled for Linux/Windows; Windows IAB socket mode remains disabled.
 
 ## Optional operation feedback
 
-Feedback is off by default. The host can enable the Browser Use cursor and an
-inward gradient border independently:
+Feedback is off by default. The host can enable the Browser Use cursor and a
+soft blue glow on all four inward edges independently:
 
 ```ts
 const iab = createIabRuntime({
-  appId: 'my-app', visualFeedback: { cursor: true, edgeGlow: true },
+  appId: 'my-app',
+  visualFeedback: { cursor: true, edgeGlow: true, edgeGlowColor: '#4f8fe8' },
 });
 // Mark the full operation, including work between individual input commands.
 await task.visualFeedback.setActive(first.id, true);
@@ -166,8 +177,26 @@ try {
 } finally {
   await task.visualFeedback.setActive(first.id, false);
 }
+// Toggle the edge independently, or recolor active pages without reloading.
+await iab.visualFeedback.configure({ edgeGlow: false });
+await iab.visualFeedback.configure({ edgeGlow: true, edgeGlowColor: '#8b5cf6' });
 await iab.visualFeedback.configure({ cursor: false, edgeGlow: false });
 ```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `cursor` | `false` | Show the original Browser Use cursor and click ripple. |
+| `edgeGlow` | `false` | Show the inward edge glow, independently of the cursor. |
+| `edgeGlowColor` | `'#4f8fe8'` | One base color for all four edges, fading to transparent; accepts `#RGB` or `#RRGGBB`. |
+
+The same options work in `createIabRuntime({ visualFeedback: ... })` and
+`iab.visualFeedback.configure(...)`. Updates only replace supplied, defined
+fields; setting a color does not enable the effect, and disabling/re-enabling
+the edge preserves its color. Color updates apply to active tabs in this runtime
+immediately, including pages with strict CSP. Hex values are normalized to
+lowercase `#rrggbb`; invalid values reject the whole update without changing
+existing options. `iab.visualFeedback.getOptions()` returns a copy of the
+current options. Edge color does not change the original cursor or click ripple.
 
 Accepted CDP `Input.*` calls also trigger a 1.2-second activity pulse. Mouse
 coordinates come from the real input, with presses snapping to the actual point.
@@ -176,6 +205,13 @@ that activity to another page. The host must finish explicit activity in a
 `finally` block. Navigation resets pointer coordinates; deactivation, disable
 and page disposal remove decorations and cancel animation. Reduced-motion
 preferences disable travel, click-ring and border animation.
+
+Both effects are implemented and shipped by `open-browser-use-electron`,
+including the cursor bitmap, motion and edge rendering. The host only configures
+them and marks the target tab's operation lifecycle; no example CSS or cursor
+code needs to be copied. The edge glow uses blurred inset shadows of the same
+configured color, with a wide transparent falloff and subtle breathing. There is no hard
+outline or four overlapping gradient strips to form blocks at the corners.
 
 The original extension's `cursor-chat.png`, 23×24 display size, geometry and
 spring renderer are reused. `scripts/generate-cursor.mjs` creates the standalone

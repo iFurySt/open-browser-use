@@ -7,4 +7,9 @@ contextBridge.exposeInMainWorld('iabExample', {
     ipcRenderer.on('iab-example:changed', listener);
     return () => ipcRenderer.removeListener('iab-example:changed', listener);
   },
+  onFocusAddress: callback => {
+    const listener=()=>callback();
+    ipcRenderer.on('iab-example:focus-address',listener);
+    return ()=>ipcRenderer.removeListener('iab-example:focus-address',listener);
+  },
 });

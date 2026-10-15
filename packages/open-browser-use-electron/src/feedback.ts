@@ -1,8 +1,13 @@
 import type { WebContents } from 'electron';
 import { cursorSource, cursorBitmap } from './cursor.generated.js';
 
-export type VisualFeedbackOptions = { cursor?: boolean; edgeGlow?: boolean };
-type FeedbackPayload = { active: boolean; cursor: boolean; edgeGlow: boolean; x?: number; y?: number; pressed: boolean; clicks: number };
+export type VisualFeedbackOptions = {
+  cursor?: boolean;
+  edgeGlow?: boolean;
+  /** Shared edge color as #RGB or #RRGGBB. Defaults to #4f8fe8. */
+  edgeGlowColor?: string;
+};
+type FeedbackPayload = Required<VisualFeedbackOptions> & { active: boolean; x?: number; y?: number; pressed: boolean; clicks: number };
 type Entry = { active: boolean; pulse: boolean; x?: number; y?: number; pressed: boolean; clicks: number; installed: boolean; timer?: NodeJS.Timeout; queue: Promise<void> };
 
 type CursorRenderer = { destroy(): void; setState(state: {cursor: {x?: number; y?: number; visible: boolean; animateMovement: boolean; moveSequence: number}; isVisible: boolean; turnKey: string; viewportSize: {width: number; height: number}}): void };
@@ -24,11 +29,12 @@ function renderFeedback(payload: FeedbackPayload, createCursorRenderer: CursorFa
     const shadow = root.attachShadow({mode:'closed'});
     const sheet = new CSSStyleSheet();
     // Constructed CSS and the original bitmap on canvas respect strict site CSP.
+    // One blurred inset contour avoids the corner seams of four gradient strips.
     sheet.replaceSync(`
       :host{pointer-events:none!important}*{box-sizing:border-box;pointer-events:none!important}
-      .edge{position:absolute;inset:0;background:linear-gradient(180deg,#7b93ff80,transparent 27px),linear-gradient(0deg,#e793c580,transparent 27px),linear-gradient(90deg,#b493ff80,transparent 27px),linear-gradient(270deg,#6acfd680,transparent 27px);box-shadow:inset 0 0 0 1px #a59de766;animation:obu-breathe 2.6s ease-in-out infinite}
-      .ring{position:absolute;left:-16px;top:-16px;width:32px;height:32px;border:2px solid #9a9be0;border-radius:50%;opacity:0}
-      @keyframes obu-breathe{50%{opacity:.65}}@keyframes obu-click{from{opacity:.8;scale:.3}to{opacity:0;scale:1.6}}
+      .edge{position:absolute;inset:0;box-shadow:inset 0 0 36px 4px rgba(var(--obu-edge-rgb),.32),inset 0 0 80px rgba(var(--obu-edge-rgb),.08);animation:obu-breathe 3.6s ease-in-out infinite}
+      .ring{position:absolute;left:-16px;top:-16px;width:32px;height:32px;border:2px solid #70a2e5;border-radius:50%;opacity:0}
+      @keyframes obu-breathe{50%{opacity:.8}}@keyframes obu-click{from{opacity:.8;scale:.3}to{opacity:0;scale:1.6}}
       @media(prefers-reduced-motion:reduce){.edge{animation:none}.ring{animation:none!important}}
     `);
     shadow.adoptedStyleSheets = [sheet];
@@ -51,6 +57,8 @@ function renderFeedback(payload: FeedbackPayload, createCursorRenderer: CursorFa
   const pointer = payload.cursor && Number.isFinite(payload.x) && Number.isFinite(payload.y);
   control.root.dataset.active='true'; control.root.dataset.cursorVisible=String(pointer); control.root.dataset.edgeGlow=String(payload.edgeGlow);
   control.edge.hidden=!payload.edgeGlow;
+  const rgb = [1,3,5].map(start=>parseInt(payload.edgeGlowColor.slice(start,start+2),16)).join(',');
+  control.edge.style.setProperty('--obu-edge-rgb',rgb);
   control.renderer.setState({cursor:{x:payload.x,y:payload.y,visible:pointer,animateMovement:!payload.pressed && !matchMedia('(prefers-reduced-motion: reduce)').matches,moveSequence:payload.clicks},isVisible:pointer,turnKey:'iab',viewportSize:{width:innerWidth,height:innerHeight}});
   control.ring.hidden=!pointer;
   if (pointer) {
@@ -68,15 +76,25 @@ function renderFeedback(payload: FeedbackPayload, createCursorRenderer: CursorFa
 
 export class FeedbackController {
   private entries = new Map<WebContents,Entry>();
-  private options: Required<VisualFeedbackOptions> = {cursor:false,edgeGlow:false};
-  constructor(options: VisualFeedbackOptions = {}) { this.validate(options); this.options={...this.options,...options}; }
+  private options: Required<VisualFeedbackOptions> = {cursor:false,edgeGlow:false,edgeGlowColor:'#4f8fe8'};
+  constructor(options: VisualFeedbackOptions = {}) { this.options={...this.options,...this.normalize(options)}; }
   get configuration(): Required<VisualFeedbackOptions> { return {...this.options}; }
-  private validate(options: VisualFeedbackOptions): void {
-    for (const key of ['cursor','edgeGlow'] as const) if (options[key]!==undefined && typeof options[key]!=='boolean') throw new Error('Visual feedback options must be boolean');
+  private normalize(options: VisualFeedbackOptions): VisualFeedbackOptions {
+    const normalized: VisualFeedbackOptions = {};
+    for (const key of ['cursor','edgeGlow'] as const) if (options[key]!==undefined) {
+      if (typeof options[key]!=='boolean') throw new Error('Visual feedback options must be boolean');
+      normalized[key]=options[key];
+    }
+    if (options.edgeGlowColor!==undefined) {
+      if (typeof options.edgeGlowColor!=='string' || !/^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(options.edgeGlowColor)) throw new Error('edgeGlowColor must be a #RGB or #RRGGBB hex color');
+      const color=options.edgeGlowColor.toLowerCase();
+      normalized.edgeGlowColor=color.length===4?'#'+[...color.slice(1)].map(char=>char+char).join(''):color;
+    }
+    return normalized;
   }
   register(contents: WebContents): void { this.entries.set(contents,{active:false,pulse:false,pressed:false,clicks:0,installed:false,queue:Promise.resolve()}); }
   async configure(options: VisualFeedbackOptions): Promise<void> {
-    this.validate(options); this.options={...this.options,...options};
+    this.options={...this.options,...this.normalize(options)};
     await Promise.all([...this.entries.keys()].map(contents=>this.paint(contents)));
   }
   async setActive(contents: WebContents,active: boolean): Promise<void> {
