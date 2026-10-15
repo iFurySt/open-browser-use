@@ -313,7 +313,9 @@ IME 和跨域 iframe 行为必须实测。参见
 
 光标视觉反馈与输入执行分开：可选 `visualFeedback` 在 guest 的 isolated
 world/closed shadow 中绘制原 Browser Use 鼠标和内侧渐变边缘，无宿主
-IPC 或凭据。库默认关闭，宿主可分别开启 cursor/edgeGlow，按 scope 内
+IPC 或凭据。库默认关闭，宿主可分别开启 cursor/edgeGlow，通过
+edgeGlowColor（#RGB / #RRGGBB，默认 #4f8fe8）设置四边同色淡出；初始化及
+运行时 configure 均支持，部分更新保留其余配置，关闭光效不丢失颜色。按 scope 内
 明确 tab 标记活动；实际 CDP Input 更新位置并触发 1.2 秒短期提示。
 导航重置坐标，结束/关闭/销毁取消动画，隐藏页面不等待动画完成或抢焦点。
 Chrome cursor 素材和 spring renderer 为单一来源，生成 Electron 独立制品；

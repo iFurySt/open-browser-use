@@ -4,6 +4,12 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-10-15 | IAB 光效参数 | 接入方可独立开关边缘光效，并按应用风格指定颜色。 | SDK 提供 `edgeGlow` 与 `edgeGlowColor`，初始化和运行时更新均可用；默认蓝色，支持短/长十六进制颜色，四边同色淡出。关闭保留颜色，鼠标独立；非法颜色不修改既有配置。 |
+| 2026-10-15 | IAB 重复动作测试 | 可反复点击任一动作观察鼠标和边缘光效，不必每次重跑整套。 | 取消手动 1–5 的顺序锁；1/2/5 重复新开页面，3/4 在最近 Tab 1/2 重复操作；缺少目标提示打开对应页，执行中仍防并发。仅一键重放清理旧页。 |
+| 2026-10-15 | IAB 柔和操作光效 | 操作中的页面四边自然向内淡出，减少角落色块感。 | Electron SDK 将四层线性渐变与硬描边替换为同一蓝色的模糊内发光，扩大衰减范围并减弱呼吸变化；虚拟鼠标与光效均由 SDK 提供，示例只控制开关与操作生命周期。 |
+| 2026-10-14 | IAB 地址与加载反馈 | 裸域名输入回车即可访问，慢网站也能立即看出正在加载，地址栏选中更明显。 | 支持完整 URL、裸域名和 localhost 端口；逐 tab 旋转指示、导航失败重试、蓝色聚焦/文字选中与 Cmd/Ctrl+L；宿主状态读取不等待页面命令。 |
+| 2026-10-14 | IAB 手动浏览与保留结果 | 跑完演示后可以自由切换页面、查看结果和输入新网址。 | 移除收尾关闭全部，运行中也可切换 tabs；地址栏 Enter、刷新和前后导航支持手动接管，当前步骤结束后暂停剩余编排；四边光效统一浅深蓝。 |
+| 2026-10-14 | Electron IAB 示例迭代 | 用简洁的黑白灰界面查看本地页面操作和真实网站的多 tab 演示。 | 删除装饰色块与冗余文案，精简动作列表、tabs、地址栏和本地计数/消息表单；增加打开 `github.com/ifuryst` 的 Tab 3，五步结束后保留三个页面供检查，支持手动与自动播放。 |
 | 2026-10-14 | Electron IAB 操作提示 | 用户可以直接看出 AI 正在操作哪个页面，也可以随时关闭视觉提示。 | 复用既有 Browser Use 鼠标原图、尺寸和弹簧动画，增加页面内侧渐变边缘及点击波纹；库默认关闭，示例提供操作提示开关。反馈跟随目标 tab 的真实 CDP 输入并在操作结束清理，兼容严格 CSP。 |
 | 2026-10-13 | Electron IAB 首版源码 | Electron 应用可直接嵌入会话多 tab 浏览器，并用私有通道或经过鉴权的本地 socket 接入工具进程。 | 新增 `open-browser-use-electron`、`obu iab` 命令、原生 peer 与短期 lease 鉴权；`examples/electron-iab` 界面聚焦 main + CLI + 私有通道的五步动作演示，支持手动/自动播放；Node/CLI × private/socket 接法保留在参考代码与真实 Electron smoke。尚未发布 npm 包；Windows socket 不开放。 |
 | 2026-10-09 | Open Browser Use 1.0 | CLI、Chrome extension 与多语言 SDK 进入首个稳定正式版本；用户可以在真实 Chrome profile 中使用完整的 tab/CDP/history/download/file chooser/WebMCP 能力，并通过 npm、PyPI、Homebrew 或 GitHub Release 安装。 | 发布 `v1.0.0`，统一 CLI、extension、protocol、JavaScript SDK、Python SDK 和内部 client-rewrite 的版本；收录 `v0.1.42` 以来的 WebMCP 页面工具、多关键词历史搜索、connected profile 选择优化和本地 ZIP setup。 |

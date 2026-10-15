@@ -9,6 +9,7 @@ import { startFixture } from './fixture.mjs';
 import { runSmoke } from './smoke.mjs';
 import { createExampleClients } from './integrations.mjs';
 import { createActionDemo } from './demo.mjs';
+import { normalizeAddress } from './address.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const smoke = process.argv.includes('--smoke');
@@ -22,23 +23,37 @@ async function main() {
   let shuttingDown = false;
   const fixture = await startFixture();
   let feedbackEnabled = true;
-  const runtime = createIabRuntime({ appId: 'electron-example', visualFeedback:{cursor:true,edgeGlow:true} });
+  const runtime = createIabRuntime({ appId: 'electron-example', visualFeedback:{cursor:true,edgeGlow:true,edgeGlowColor:'#4f8fe8'} });
   runtime.profiles.open({ id: 'work' });
   const scope = runtime.scopes.open({ id: 'example-task', profileId: 'work' });
-  const window = new BrowserWindow({ width: 1240, height: 850, minWidth: 960, minHeight: 760,
-    webPreferences: { preload: join(here, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false },
+  // Keep the disposable smoke UI separate from manual clicks, while allowing
+  // its renderer to paint and update state without a visible native window.
+  const window = new BrowserWindow({ width: 1240, height: 850, minWidth: 960, minHeight: 760, show: !smoke,
+    webPreferences: { preload: join(here, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: !smoke },
   });
+  // App-local shortcut, including when a native browser guest owns keyboard focus.
+  const bindAddressShortcut = contents => contents.on('before-input-event',(event,input)=>{
+    if (input.type==='keyDown' && (input.meta || input.control) && input.key.toLowerCase()==='l') {
+      event.preventDefault();
+      if (!shuttingDown && !window.isDestroyed()) { window.webContents.focus(); window.webContents.send('iab-example:focus-address'); }
+    }
+  });
+  bindAddressShortcut(window.webContents);
+  const onContents = (_event,contents) => bindAddressShortcut(contents);
+  app.on('web-contents-created',onContents);
   window.webContents.on('will-navigate', event => event.preventDefault());
   const surface = runtime.surfaces.register({ id: 'browser-panel', window, owner: window.webContents });
   let selected;
   const changed = () => { if (!shuttingDown && !window.isDestroyed()) window.webContents.send('iab-example:changed'); };
-  const present = id => { surface.present(id); selected = id; changed(); };
+  const present = id => { surface.present(id); selected = id; changed(); refreshHistory(id); };
   runtime.subscribe(event => {
     if (shuttingDown || event.scopeId !== scope.id) return;
     if (event.method === 'onTabClosed' && selected === event.params.tabId) {
       const remaining = scope.tabs.list(); selected = undefined;
       if (remaining.length) present(remaining.at(-1).id);
     }
+    if (event.method==='onTabClosed') histories.delete(event.params.tabId);
+    if (event.method==='onTabUpdated') refreshHistory(event.params.tab.id);
     if (['onTabCreated','onTabClosed','onTabUpdated'].includes(event.method)) changed();
   });
   const resize = () => { const [width,height] = window.getContentSize(); surface.setBounds({ x: 280, y: 134, width: Math.max(1,width-280), height: Math.max(1,height-134) }); };
@@ -46,7 +61,7 @@ async function main() {
   const clients = createExampleClients({runtime,scopeId:scope.id,cliPath:resolve(here,'../../build/obu-iab'),directory:here});
   const runCli = args => clients.launchCli('private',args);
   const demo = createActionDemo({cli:runCli,fixtureUrl:fixture.url,present,changed,paceMs:smoke?0:1000,
-    feedback:{setActive:(id,active)=>scope.visualFeedback.setActive(id,active),enabled:()=>feedbackEnabled},feedbackHoldMs:smoke?0:550});
+    feedback:{setActive:(id,active)=>scope.visualFeedback.setActive(id,active),enabled:()=>feedbackEnabled},feedbackHoldMs:smoke?350:550,...(smoke?{thirdTabUrl:`${fixture.url}/github-profile`}:{})});
   // Reference integrations are kept in code and smoke, separate from the demo UI.
   async function launch(mode) {
     const result = mode.startsWith('cli-')
@@ -59,15 +74,75 @@ async function main() {
     if (tabId === undefined) throw new Error('请选择一个标签');
     return runCli(['cdp',String(tabId),method,JSON.stringify(commandParams)]).then(response=>response.result);
   };
+  // State reads must never wait behind a slow Page.navigate. Refresh history in
+  // the background, coalescing page events, and publish it when available.
+  const histories = new Map(), historyReads = new Map();
+  function refreshHistory(id) {
+    if (shuttingDown || !scope.tabs.list().some(tab=>tab.id===id)) return;
+    const current=historyReads.get(id);
+    if (current) { current.dirty=true; return; }
+    const entry={dirty:false}; historyReads.set(id,entry);
+    void (async()=>{
+      do {
+        entry.dirty=false;
+        const history=await selectedCdp('Page.getNavigationHistory',{},id).catch(()=>undefined);
+        if (shuttingDown || !scope.tabs.list().some(tab=>tab.id===id)) break;
+        if (history) histories.set(id,history);
+        changed();
+      } while(entry.dirty);
+    })().finally(()=>historyReads.delete(id));
+  }
+  async function navigateTo(id,value) {
+    const url=normalizeAddress(value);
+    const result=await selectedCdp('Page.navigate',{url},id);
+    if (result.errorText) throw new Error('网站未能打开，请检查地址或网络');
+    return result;
+  }
+  const browserActions = new Set(['create','close','navigate','reload','back','forward']);
+  let controlQueue = Promise.resolve(), controlBusy = 0;
+  const controlBrowser = (message, tabId) => {
+    controlBusy++; changed();
+    // Request the pause immediately, before this operation reaches its queue.
+    const idle = demo.takeControl();
+    const result = controlQueue.catch(()=>{}).then(async()=>{
+      await idle;
+      if (shuttingDown) throw new Error('示例已关闭');
+      if (message.action==='create') {
+        const url=normalizeAddress(message.value || `${fixture.url}/manual`);
+        const {result:tab} = await runCli(['open-tab']); present(tab.id);
+        await navigateTo(tab.id,url);
+        return tab;
+      }
+      if (!scope.tabs.list().some(tab=>tab.id===tabId)) throw new Error('请选择一个有效标签');
+      if (message.action==='close') return runCli(['close-tab',String(tabId)]);
+      // Keep the target captured at request time, even if playback presented a
+      // different page while finishing its current step.
+      present(tabId);
+      switch (message.action) {
+        case 'navigate': return navigateTo(tabId,typeof message.value==='string'?message.value:message.value.url);
+        case 'reload': return selectedCdp('Page.reload',{},tabId);
+        case 'back': case 'forward': {
+          const history = await selectedCdp('Page.getNavigationHistory',{},tabId);
+          const entry = history.entries[history.currentIndex+(message.action==='back'?-1:1)];
+          if (entry) await selectedCdp('Page.navigateToHistoryEntry',{entryId:entry.id},tabId);
+          return {};
+        }
+      }
+    }).finally(()=>{ controlBusy--; changed(); });
+    controlQueue=result; return result;
+  };
   ipcMain.handle('iab-example:action', async (event, message) => {
     if (shuttingDown) return { tabs: [], selected: undefined };
     if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame.url !== hostUrl) throw new Error('Unauthorized renderer');
-    if ((demo.snapshot().busy || demo.snapshot().playing) && !['state','viewport','demo-stop','feedback'].includes(message?.action)) throw new Error('演示正在运行');
+    if (browserActions.has(message?.action)) {
+      const tabId = message.action==='close' ? message.value : message.action==='navigate' && typeof message.value==='object' && message.value ? message.value.tabId : selected;
+      return controlBrowser(message,tabId);
+    }
+    if ((demo.snapshot().busy || demo.snapshot().playing || controlBusy) && !['state','viewport','demo-stop','feedback','select','hide'].includes(message?.action)) throw new Error('演示正在运行');
     switch (message?.action) {
       case 'state': {
-        const tabs = scope.tabs.list(), tabId = selected; let history;
-        if (tabId !== undefined) history = await selectedCdp('Page.getNavigationHistory',{},tabId).catch(() => undefined);
-        return {tabs,selected:tabId,demo:demo.snapshot(),feedbackEnabled,canGoBack:!!history && history.currentIndex>0,canGoForward:!!history && history.currentIndex<history.entries.length-1};
+        const tabs = scope.tabs.list(), tabId = selected, history = histories.get(tabId);
+        return {tabs,selected:tabId,demo:demo.snapshot(),controlBusy,feedbackEnabled,canGoBack:!!history && history.currentIndex>0,canGoForward:!!history && history.currentIndex<history.entries.length-1};
       }
       case 'feedback': {
         if (typeof message.value!=='boolean') throw new Error('Invalid feedback option');
@@ -83,16 +158,6 @@ async function main() {
       }
       case 'select': if (!scope.tabs.list().some(t => t.id === message.value)) throw new Error('Unknown tab'); present(message.value); return {};
       case 'hide': surface.hide(); selected = undefined; changed(); return {};
-      case 'close': await runCli(['close-tab',String(message.value)]); return {};
-      case 'navigate': return selectedCdp('Page.navigate',{url:message.value});
-      case 'reload': return selectedCdp('Page.reload');
-      case 'back': case 'forward': {
-        const tabId = selected;
-        const history = await selectedCdp('Page.getNavigationHistory',{},tabId);
-        const entry = history.entries[history.currentIndex+(message.action==='back'?-1:1)];
-        if (entry) await selectedCdp('Page.navigateToHistoryEntry',{entryId:entry.id},tabId); return {};
-      }
-      case 'create': { const {result:tab} = await runCli(['open-tab',message.value || `${fixture.url}/manual`]); present(tab.id); return tab; }
       case 'demo-step': return demo.step(message.value);
       case 'demo-play': return demo.play();
       case 'demo-stop': return demo.stop();
@@ -104,6 +169,7 @@ async function main() {
   async function shutdown() {
     if (shuttingDown) return;
     shuttingDown = true;
+    app.off('web-contents-created',onContents);
     demo.stop();
     await runtime.dispose(); await fixture.close();
     if (!window.isDestroyed()) window.destroy();

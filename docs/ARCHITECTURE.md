@@ -253,7 +253,9 @@ dot；hyphen 版本 `com.ifuryst.open-computer-use.extension` 会被
 实现与边界见 [Electron IAB 集成设计](design-docs/electron-iab.md)。首版交付
 Electron 主进程集成包和 `examples/electron-iab`，按命名 profile
 共享登录态，每个会话 scope 拥有多个独立 tabs。底座是 `WebContentsView` 和
-`webContents.debugger`，复用 Open Browser Use 方法与事件契约。
+`webContents.debugger`，复用 Open Browser Use 方法与事件契约。Tab 快照和更新事件提供独立 loading、
+pendingUrl 与主 frame 导航错误；宿主可直接呈现加载状态，示例 UI 状态读取
+不等待网页命令，前后历史另行后台刷新。
 
 socket bridge 默认关闭；启用时必须经过原生 peer 身份检查和任务 lease
 认证，并持续校验 scope/tab ownership。身份 adapter 不可用时拒绝开放
@@ -275,7 +277,8 @@ route 的既有能力和访问边界不变。Electron 包仍待单独配置发�
 
 可选 `visualFeedback` 在 guest isolated world 显示现有 Browser Use 鼠标和
 内侧渐变边缘。主进程标记 scope 内目标 tab 的操作生命周期；CDP 输入驱动
-坐标和短期活动。库默认关闭，示例提供开关。素材与动画从 Chrome cursor
+坐标和短期活动。库默认关闭，示例提供开关。`edgeGlow` 独立启停边缘光效，
+`edgeGlowColor` 配置四边统一颜色，初始化和运行时均可设置。素材与动画从 Chrome cursor
 单一来源生成；视觉层不参与 transport 认证，也不暴露宿主能力。
 
 ## 新项目需要补齐的内容

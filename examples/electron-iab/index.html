@@ -2,43 +2,36 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
 <title>Open Browser Use · Electron IAB</title>
-<style>
-*{box-sizing:border-box}body{margin:0;color:#20252c;background:#fff;font:14px/1.5 system-ui}button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.4}button:focus-visible,input:focus-visible{outline:2px solid #527cc4;outline-offset:2px}.app{display:grid;grid-template-columns:280px minmax(0,1fr);height:100vh;overflow:hidden}.sidebar{background:#f7f8fa;border-right:1px solid #e2e5e9;padding:24px 18px;overflow:auto}.brand{display:flex;align-items:center;gap:9px;margin-bottom:28px}.brand-icon{width:30px;height:30px;background:#243c37;color:#fff;display:grid;place-items:center;border-radius:11px;font-size:18px}.brand h1{font-size:15px;line-height:1.3;margin:0}h2{font-size:14px;margin:0 0 10px}p{color:#717982;margin:0 0 18px}section{margin:24px 0}.methods{display:grid;gap:6px}.method{display:flex;align-items:center;width:100%;text-align:left;border:1px solid #e2e6e9;border-radius:8px;background:white;padding:11px 13px}.method:hover{border-color:#a5b9ae;background:#f2f7f4}.result{border-top:1px solid #e1e5e8;padding-top:20px}#log{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;font:11px/1.65 ui-monospace;color:#56646b;margin:0}.browser-panel{display:flex;flex-direction:column;min-width:0;position:relative;background:#fff}.tab-bar{height:46px;flex:none;display:flex;align-items:stretch;background:#f1f2f4;border-bottom:1px solid #e2e5e8;padding:6px 8px 0;gap:6px}.tabs{display:flex;gap:4px;min-width:0;overflow:auto;scrollbar-width:none;flex:1}.tabs::-webkit-scrollbar{display:none}.tab{display:flex;align-items:center;gap:5px;flex:0 0 174px;max-width:210px;min-width:105px;border-radius:8px 8px 0 0;border:1px solid transparent}.tab.selected{background:white;border-color:#e2e5e8;border-bottom-color:white}.tab:hover{background:#e9ebee}.tab.selected:hover{background:white}.tab-select{display:flex;align-items:center;gap:8px;border:0;background:transparent;min-width:0;flex:1;height:100%;padding:0 4px 0 11px;font-size:12px;color:#59636e}.tab.selected .tab-select{color:#242e35}.tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tab-icon{font-size:15px;color:#75867e}.icon{display:grid;place-items:center;flex:none;width:32px;height:32px;border:0;background:transparent;border-radius:7px;color:#6f7982;font-size:20px;line-height:1}.icon:hover:not(:disabled){background:#e8ecef;color:#26342e}.close{width:24px;height:24px;font-size:16px;margin-right:5px}.toolbar{height:58px;flex:none;display:flex;align-items:center;gap:5px;padding:9px 12px;border-bottom:1px solid #e6e9eb}.address-form{display:flex;align-items:center;flex:1;min-width:0;margin:0 7px;border:1px solid #e5e8eb;background:#f8f9fa;border-radius:22px;padding:0 12px;gap:8px}.address-icon{color:#8d9892;font-size:14px}#address{border:0;background:transparent;height:36px;min-width:0;flex:1;font-size:12px;color:#46534d;outline:none}#address:focus{outline:none}.panel-info{height:30px;flex:none;border-bottom:1px solid #eff1f2;padding:6px 16px;display:flex;align-items:center;gap:7px;font-size:10px;color:#89918e}.dot{width:5px;height:5px;border-radius:50%;background:#80a68d}.viewport{position:relative;flex:1;min-height:0;overflow:hidden;background:#fff}.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8a948e;text-align:center;padding:32px}.empty[hidden]{display:none}.empty-symbol{font-size:38px;color:#a7bab0;margin-bottom:12px}.empty h2{font-size:19px;font-weight:500;color:#44574c}.empty p{max-width:340px;font-size:13px}.empty button{border:1px solid #d9e4dc;background:#f1f6f2;color:#486452;border-radius:8px;padding:9px 16px}#status{margin-left:auto}#error{color:#a34436;margin-bottom:12px;font-size:12px;background:#fff4f0;border:1px solid #f0d9d0;padding:8px 12px;border-radius:8px}#error[hidden]{display:none}
-
-#result{margin:0;color:#617068;font-size:12px}details{margin-top:12px}summary{cursor:pointer;font-size:11px;color:#8a948e}details[hidden]{display:none}details pre{margin-top:10px!important}.result h2{font-size:12px;font-weight:500;color:#89918e}
-.demo-route{font-size:11px;color:#8a948e;margin:-14px 0 20px}.play{width:100%;padding:10px;border:0;border-radius:8px;background:#294c3d;color:#fff;font-weight:500}.play:hover{background:#35604c}.step{gap:10px;font-size:12px}.step-number{display:grid;place-items:center;flex:none;width:20px;height:20px;font:11px ui-monospace;color:#83918a;border:1px solid #e0e7e2;border-radius:50%}.step-state{margin-left:auto;color:#638771}.step.running{border-color:#8bab98;background:#edf5ef}.step.done .step-number{border-color:#a3c1ae;color:#4f765b}.method:disabled{opacity:.45}.method.done:disabled{opacity:.75}
-.feedback-toggle{display:flex;align-items:center;gap:7px;margin-top:12px;font-size:11px;color:#7b8981;cursor:pointer}.feedback-toggle input{accent-color:#547e65}
-</style>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <main class="app">
 <aside class="sidebar">
-  <div class="brand"><div class="brand-icon">◎</div><h1>Electron IAB</h1></div>
-  <p class="demo-route">main → CLI · 私有通道</p>
-  <button id="play" class="play">▶ 一键播放</button>
+  <div class="brand"><h1>Electron IAB</h1></div>
+  <button id="play" class="play" data-mode="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="play-mark" d="m9 5 10 7-10 7Z"/><rect class="stop-mark" x="6" y="6" width="12" height="12" rx="1"/></svg><span id="play-label">一键播放</span></button>
   <label class="feedback-toggle"><input id="feedback-enabled" type="checkbox" checked>操作提示</label>
-  <section><h2>演示步骤</h2><div class="methods">
+  <section class="steps-section"><div class="section-heading"><h2>动作</h2><span id="step-progress">0 / 5</span></div><div class="methods">
     <button class="method step" data-step="1"><span class="step-number">1</span><span>打开 Tab 1</span><span class="step-state"></span></button>
     <button class="method step" data-step="2"><span class="step-number">2</span><span>打开 Tab 2</span><span class="step-state"></span></button>
-    <button class="method step" data-step="3"><span class="step-number">3</span><span>Tab 1 · 点击按钮</span><span class="step-state"></span></button>
-    <button class="method step" data-step="4"><span class="step-number">4</span><span>Tab 2 · 输入并提交</span><span class="step-state"></span></button>
-    <button class="method step" data-step="5"><span class="step-number">5</span><span>关闭所有标签</span><span class="step-state"></span></button>
+    <button class="method step" data-step="3"><span class="step-number">3</span><span>Tab 1 · 点击</span><span class="step-state"></span></button>
+    <button class="method step" data-step="4"><span class="step-number">4</span><span>Tab 2 · 输入提交</span><span class="step-state"></span></button>
+    <button class="method step" data-step="5"><span class="step-number">5</span><span>Tab 3 · GitHub</span><span class="step-state"></span></button>
   </div></section>
-  <section class="result"><h2>运行状态</h2><p id="result">准备就绪</p><div id="error" role="alert" hidden></div><details id="result-details" hidden><summary>查看结果</summary><pre id="log"></pre></details></section>
+  <section class="result" hidden><div class="result-inner"><h2>运行状态</h2><p id="result" hidden></p><div id="error" role="alert" hidden></div><details id="result-details" hidden><summary>查看结果</summary><pre id="log"></pre></details></div></section>
 </aside>
-<section class="browser-panel" style="margin:0" aria-label="浏览器侧边面板">
-  <div class="tab-bar"><div id="tabs" class="tabs" role="tablist" aria-label="浏览器标签"></div><button class="icon" data-action="create" title="新建标签" aria-label="新建标签">+</button></div>
+<section class="browser-panel" aria-label="浏览器侧边面板">
+  <div class="tab-bar"><div id="tabs" class="tabs" role="tablist" aria-label="浏览器标签"></div><button class="icon" data-action="create" title="新建标签" aria-label="新建标签"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
   <div class="toolbar">
-    <button class="icon" data-action="back" id="back" title="后退" aria-label="后退">←</button><button class="icon" data-action="forward" id="forward" title="前进" aria-label="前进">→</button><button class="icon" data-action="reload" id="reload" title="重新加载" aria-label="重新加载">↻</button>
-    <form id="address-form" class="address-form"><span class="address-icon" aria-hidden="true">◎</span><input id="address" aria-label="网页地址" placeholder="输入网址，按 Enter 访问" autocomplete="off" spellcheck="false"></form>
-    <button class="icon" data-action="hide" title="隐藏网页，保留所有标签" aria-label="隐藏网页">◫</button>
+    <button class="icon" data-action="back" id="back" title="后退" aria-label="后退"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18"/></svg></button><button class="icon" data-action="forward" id="forward" title="前进" aria-label="前进"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 7 7-7 7M21 12H3"/></svg></button><button class="icon" data-action="reload" id="reload" title="重新加载" aria-label="重新加载"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2 5M20 7l-2-2"/></svg></button>
+    <form id="address-form" class="address-form"><span class="address-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a18 18 0 0 1 0 18 18 18 0 0 1 0-18"/></svg></span><input id="address" aria-label="网页地址" placeholder="输入网址，按 Enter 访问" autocomplete="off" spellcheck="false"></form>
+    <button class="icon" data-action="hide" title="隐藏网页，保留所有标签" aria-label="隐藏网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
   </div>
-  <div class="panel-info"><span class="dot"></span><span>Profile · work</span><span id="status">准备中</span></div>
-  <div id="viewport" class="viewport"><div id="empty" class="empty"><div class="empty-symbol">◎</div><h2 id="empty-heading">开始演示</h2><p id="empty-description">点击左侧步骤，或一键播放。</p><button id="empty-play">播放演示</button></div></div>
+  <div class="panel-info"><span>work</span><span id="status" role="status">准备中</span></div>
+  <div id="viewport" class="viewport"><div id="empty" class="empty"><h2 id="empty-heading">开始演示</h2><p id="empty-description" hidden>点击左侧步骤，或一键播放。</p><button id="empty-play">播放演示</button></div></div>
 </section>
 </main>
-<script src="renderer.js"></script>
+<script type="module" src="renderer.js"></script>
 </body>
 </html>

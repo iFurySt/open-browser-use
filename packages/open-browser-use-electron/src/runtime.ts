@@ -15,6 +15,7 @@ type Tab = {
   id: number; scopeId: string; view: WebContentsView; contents: WebContents; lifetime: 'temporary' | 'persistent';
   touched: Set<string>; marks: Map<string, 'handoff' | 'deliverable'>;
   attached: boolean; mouseReady: boolean; pending: number; queue: Promise<any>; removers: (() => void)[];
+  loading: boolean; pendingUrl?: string; loadError?: { code: number; description: string; url: string };
 };
 type ScopeState = { id: string; profileId: string; tabs: Map<number, Tab>; name: string; closing?: boolean };
 type Surface = { window: BaseWindow; owner: WebContents; tabId?: number; bounds: { x: number; y: number; width: number; height: number }; remove: () => void };
@@ -110,7 +111,8 @@ export class IabRuntime implements Backend {
   }
   private snapshot(tab: Tab): Record<string, any> {
     return { id: tab.id, title: tab.contents.getTitle(), url: tab.contents.getURL(),
-      active: [...this.surfaceStates.values()].some(s => s.tabId === tab.id), lifetime: tab.lifetime };
+        active: [...this.surfaceStates.values()].some(s => s.tabId === tab.id), lifetime: tab.lifetime,
+        loading: tab.loading, pendingUrl: tab.pendingUrl, loadError: tab.loadError };
   }
   private allocate(scopeId: string, contents?: WebContents): Tab {
     const scope = this.scope(scopeId);
@@ -119,10 +121,11 @@ export class IabRuntime implements Backend {
     if (contents && contents.session !== profile) throw new Error('Popup profile mismatch');
     const view = this.adapter.createView(profile, contents);
     view.setBounds({ x: 0, y: 0, width: 800, height: 600 }); view.setVisible(false);
-    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [] };
+    const tab: Tab = { id: this.nextTabId++, scopeId, view, contents: view.webContents, lifetime: 'temporary', touched: new Set(), marks: new Map(), attached: false, mouseReady: false, pending: 0, queue: Promise.resolve(), removers: [], loading: false };
     scope.tabs.set(tab.id, tab); this.tabsById.set(tab.id, tab);
     const wc = view.webContents;
     this.feedbackController.register(wc);
+    const updated = () => { if (!wc.isDestroyed()) this.emit(scopeId,'onTabUpdated',{tab:this.snapshot(tab)}); };
     const listen = (target: EventEmitter, name: string, listener: (...args: any[]) => void) => {
       target.on(name, listener); tab.removers.push(() => target.off(name, listener));
     };
@@ -132,6 +135,20 @@ export class IabRuntime implements Backend {
     };
     listen(wc, 'will-navigate', checkNavigation); listen(wc, 'will-frame-navigate', checkNavigation); listen(wc, 'will-redirect', checkNavigation);
     listen(wc, 'destroyed', () => this.forget(tab));
+    const navigating = (details: any,url: string,_inPlace: boolean,isMainFrame: boolean) => {
+      if (!(details.isMainFrame ?? isMainFrame)) return;
+      const target=details.url ?? url;
+      if (target?.startsWith('chrome-error:')) return;
+      tab.pendingUrl=(details.isSameDocument ?? _inPlace)?undefined:target; tab.loadError=undefined; updated();
+    };
+    listen(wc,'did-start-navigation',navigating);
+    listen(wc,'did-redirect-navigation',navigating);
+    listen(wc,'did-start-loading',()=>{tab.loading=true;updated();});
+    listen(wc,'did-stop-loading',()=>{tab.loading=false;tab.pendingUrl=undefined;updated();});
+    listen(wc,'did-fail-load',(_event: any,code: number,description: string,url: string,isMainFrame: boolean)=>{
+      if (!isMainFrame || code===-3) return; // Superseded/stopped navigation is not a site error.
+      tab.loadError={code,description,url}; updated();
+    });
     listen(wc, 'did-finish-load', () => { tab.mouseReady = false; });
     listen(wc, 'did-finish-load', () => this.feedbackController.resetDocument(wc));
     listen(wc, 'did-navigate-in-page', () => this.feedbackController.resetDocument(wc));
