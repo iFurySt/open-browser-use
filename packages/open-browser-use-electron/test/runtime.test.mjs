@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { IabRuntime } from '../dist/runtime.js';
 import { fakeElectron } from './fake-electron.mjs';
+import { once } from 'node:events';
 
 function setup(t) {
   const adapter = fakeElectron(), runtime = new IabRuntime(adapter, 'test');
@@ -11,6 +12,17 @@ function setup(t) {
   const b = runtime.scopes.open({ id: 'b', profileId: 'work' });
   t.after(() => runtime.dispose()); return { runtime, adapter, a, b };
 }
+test('managed clients opt into piped stdin without exposing the private bootstrap', async t => {
+  const { runtime, a } = setup(t);
+  const { child } = await runtime.launchClient({scopeId:a.id,command:process.execPath,
+    args:['-e','process.stdin.on("data", chunk => process.stdout.write(chunk));'],stdin:'pipe',ttlMs:5000});
+  let output=''; child.stdout.on('data',chunk=>{output+=chunk;});
+  const closed=once(child,'close'); child.stdin.end('agent MCP input\n');
+  assert.equal((await closed)[0],0); assert.equal(output,'agent MCP input\n');
+  const normal = await runtime.launchClient({scopeId:a.id,command:process.execPath,args:['-e',''],ttlMs:5000});
+  assert.equal(normal.child.stdin,null); await once(normal.child,'close');
+  await assert.rejects(runtime.launchClient({scopeId:a.id,command:process.execPath,stdin:'inherit',ttlMs:5000}),/stdin/);
+});
 test('tab loading, redirects, failure and retry are scoped and reset on navigation', async t => {
   const { runtime, adapter, a, b } = setup(t);
   const x=await a.tabs.create(), y=await b.tabs.create();

@@ -97,6 +97,7 @@ raw results are collapsed. Host styles are in `styles.css`, guest styles in
 - `demo.mjs`: repeatable manual actions, explicit tab IDs, trusted input and ordered playback/stop.
 - `integrations.mjs`: two reference cases, each supporting both transports.
 - `worker.mjs`: Node worker using the `/client` entry point.
+- `mcp.mjs`: dependency-free MCP client for already-launched IAB stdio pipes.
 - `fixture.mjs` / `fixture.css`: minimal local counter, form, synthetic login cookie and popup opener fixture.
 
 The other integrations remain in code and smoke tests, without separate app buttons:
@@ -107,6 +108,31 @@ The other integrations remain in code and smoke tests, without separate app butt
 | Electron main + Node worker | socket | `clients.launchNode('socket', url)` |
 | Electron main + CLI | private, the visible demo | `clients.launchCli('private', ['open-tab', url])` |
 | Electron main + CLI | socket | `clients.launchCli('socket', ['open-tab', url])` |
+| Electron main + MCP | private or socket | `clients.launchMcp('private')` / `clients.launchMcp('socket')` |
+
+MCP remains a code reference without additional demo buttons:
+
+```js
+import { connectExampleMcp } from './mcp.mjs';
+
+const mcp = await connectExampleMcp(await clients.launchMcp('private'));
+try {
+  const opened = await mcp.callTool('open_tab', { url: 'https://example.com' });
+  if (opened.isError) throw new Error(opened.content[0].text);
+  const tabId = opened.structuredContent.id;
+  // Main chooses whether/where to display the new page.
+  surface.present(tabId);
+  const snapshot = await mcp.callTool('snapshot', { tab_id: tabId });
+  const image = await mcp.callTool('screenshot', { tab_id: tabId });
+} finally {
+  await mcp.close(); // EOF + revoke; pages remain available in the app.
+}
+```
+
+`launchMcp` starts `obu iab mcp` with `stdin: 'pipe'`. The MCP client handles
+initialize/initialized and request correlation over stdin/stdout; FD 3 stays
+private to the IAB transport. A production host can use its agent framework's
+MCP client with the already-launched pipes instead of this small reference client.
 
 `createExampleClients` launches managed tools through `runtime.launchClient`.
 Private bootstrap fixes scope and grant; socket mode also verifies native peer
@@ -125,7 +151,9 @@ pnpm smoke:iab
 pnpm --filter @open-browser-use/electron-iab-example test
 ```
 
-The real Electron smoke exercises all four reference transports, shared login,
+The real Electron smoke exercises all four reference transports, private/socket
+MCP lifecycle and image results, trusted MCP mouse/text input, scope/grant
+rejection, revocation and retained pages after EOF, shared login,
 multi-tab ownership, hidden trusted input, socket rejection, popup lifecycle,
 panel bounds/resize/navigation, address focus/selection, bare-host Enter, held
 server responses, per-tab loading, navigation failure/retry, optional feedback,

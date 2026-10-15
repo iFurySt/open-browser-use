@@ -184,7 +184,7 @@ async function main() {
     try {
       const output = resolve(here,'../../.cache/iab-smoke'); await mkdir(output,{recursive:true});
       const savePage = (png,name='page.png') => writeFile(join(output,name), png);
-      const report = await runSmoke({ runtime, scope, fixture, surface, window, launch, present, savePage });
+      const report = await runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp:clients.launchMcp, present, savePage });
       await writeFile(join(output,'ui.png'), (await window.webContents.capturePage()).toPNG());
       await writeFile(join(output,'report.json'), JSON.stringify(report,null,2));
       console.log(JSON.stringify(report)); await shutdown();

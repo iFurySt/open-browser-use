@@ -255,6 +255,14 @@ Go CLI 通过相同继承通道使用 `obu iab info/tabs/open-tab/navigate/close
 cdp/call/turn-ended`，不从 argv/env 或 registry 取秘密。主进程调用也经过
 scope/tab ownership，但宿主主进程本身属于受信侧。
 
+`obu iab mcp` 提供独立的 IAB MCP tool catalog，包括显式 tab 的导航、
+accessibility snapshot、PNG 图片截图、真实坐标点击、聚焦元素输入和受限 CDP。
+MCP stdin/stdout 由宿主 Agent 客户端使用，FD 3 仍用于 browser bootstrap/RPC；
+`launchClient` 的可选 `stdin: 'pipe'` 不改变默认一次性 CLI 启动方式。
+Chrome `obu mcp` 的 discovery 和工具集不变。MCP EOF 保留页面，主进程决定
+surface 展示和 scope 生命周期；grant 到期、撤销与 page ownership 由 runtime
+检查。接入与参考客户端见 Electron 包 README 的 IAB MCP 小节。
+
 ## 协议与发现
 
 保留现有 4 字节 native-endian 长度前缀和 JSON-RPC framing，以及

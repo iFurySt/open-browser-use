@@ -126,6 +126,10 @@ args = ["mcp"]
 这个 MCP server 会暴露标签页列表、打开/接管标签页、导航、CDP、action plan
 和清理等浏览器工具。
 
+嵌入 Electron 的浏览器使用宿主授权的 **`obu iab mcp`**，接法与上面的
+Chrome MCP 配置不同。私有通道/socket 鉴权、工具列表和受管理 stdio 示例见
+[Electron IAB MCP 接入](packages/open-browser-use-electron/README.md#iab-mcp-for-agents)。
+
 ## License
 
 [MIT](./LICENSE)

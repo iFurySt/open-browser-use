@@ -141,6 +141,10 @@ args = ["mcp"]
 The server exposes browser tools for tab listing, opening, claiming,
 navigation, CDP, action plans, and cleanup.
 
+For an embedded Electron browser, use the host-authorized **`obu iab mcp`**
+route instead. See the [Electron IAB MCP integration](packages/open-browser-use-electron/README.md#iab-mcp-for-agents)
+for private/socket authorization, tools and managed stdio setup.
+
 ## License
 
 [MIT](./LICENSE)

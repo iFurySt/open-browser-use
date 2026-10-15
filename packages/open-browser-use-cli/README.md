@@ -176,6 +176,14 @@ The MCP server exposes browser tools such as `user_tabs`, `open_tab`,
 socket discovery as the CLI; pass `--socket <path>` or `--socket-dir <dir>` in
 `args` only when the runtime needs an explicit socket.
 
+For an embedded Electron IAB, use **`obu iab mcp`** through the Electron host's
+`runtime.launchClient({ args: ['iab', 'mcp'], stdin: 'pipe', ... })`. This route
+requires host-supplied FD 3 bootstrap, supports authenticated private/socket
+transport and never discovers Chrome sockets. A standalone MCP configuration
+cannot provide that authorization by itself. See the
+[Electron MCP integration](../open-browser-use-electron/README.md#iab-mcp-for-agents)
+for tools, lifecycle and a working reference client.
+
 ## Low-Level JSON-RPC
 
 Use `call` when no convenience command or action exists:

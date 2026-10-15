@@ -23,5 +23,10 @@ export function createExampleClients({ runtime, scopeId, cliPath, directory }) {
   return {
     launchNode: (transport,url) => launch({transport,command:process.execPath,args:[join(directory,'worker.mjs'),url],env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}}),
     launchCli: (transport,args) => launch({transport,command:cliPath,args:['iab',...args]}),
+    // Hand these pipes to the host agent's MCP client. FD 3 remains private.
+    launchMcp: (transport = 'private', options = {}) => runtime.launchClient({
+      scopeId, ttlMs:60_000, ...options, transport,
+      command:cliPath, args:['iab','mcp'], stdin:'pipe',
+    }),
   };
 }
