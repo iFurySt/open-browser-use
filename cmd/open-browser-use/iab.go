@@ -32,6 +32,7 @@ type iabRPC struct {
 	conn      net.Conn
 	bootstrap iabBootstrap
 	sequence  int
+	timeout   time.Duration
 }
 
 func connectIab(fd int, timeout time.Duration) (*iabRPC, error) {
@@ -83,7 +84,7 @@ func connectIab(fd int, timeout time.Duration) (*iabRPC, error) {
 		return nil, errors.New("unsupported IAB transport")
 	}
 	_ = conn.SetDeadline(time.Now().Add(timeout))
-	client := &iabRPC{conn: conn, bootstrap: bootstrap}
+	client := &iabRPC{conn: conn, bootstrap: bootstrap, timeout: timeout}
 	response, err := client.raw("auth.connect", map[string]any{
 		"authVersion": 1, "instanceId": bootstrap.InstanceID, "grantId": bootstrap.GrantID, "secret": bootstrap.Secret,
 	})
@@ -101,6 +102,9 @@ func connectIab(fd int, timeout time.Duration) (*iabRPC, error) {
 }
 
 func (c *iabRPC) raw(method string, params map[string]any) (map[string]any, error) {
+	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		return nil, err
+	}
 	c.sequence++
 	id := fmt.Sprintf("iab-%d", c.sequence)
 	if err := wire.WriteJSON(c.conn, map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
@@ -141,6 +145,7 @@ func newIabCommand() *cobra.Command {
 	root.PersistentFlags().IntVar(&fd, "channel-fd", 3, "inherited private bootstrap channel (never a credential file)")
 	root.PersistentFlags().DurationVar(&timeout, "timeout", 15*time.Second, "connection and request timeout")
 	root.PersistentFlags().StringVar(&turn, "turn-id", "iab-cli", "bookkeeping turn id; authorization comes from the host")
+	root.AddCommand(newIabMCPCommand(&fd, &timeout, &turn))
 	add := func(use, description string, args cobra.PositionalArgs, action func(*iabRPC, []string) (map[string]any, error)) {
 		root.AddCommand(&cobra.Command{Use: use, Short: description, Args: args, RunE: func(cmd *cobra.Command, values []string) error {
 			if timeout <= 0 || timeout > 24*time.Hour {

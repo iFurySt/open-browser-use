@@ -270,6 +270,13 @@ PID/UID/启动时间，随后完成 lease 握手；不以同 UID 或解释器路
 和 turn-ended。Node worker 通过 `open-browser-use-electron/client` 获得现有
 SDK browser/tab helper。
 
+`obu iab mcp` 将同一 scope 暴露为 MCP tools，stdio 负责 Agent 协议，FD 3
+负责私有 bootstrap/RPC 或鉴权 socket 的引导；主进程通过
+`launchClient({ stdin: 'pipe', ... })` 将 MCP 管道交给宿主的 Agent 客户端。
+页面工具显式传入 `tab_id`，不接入 Chrome discovery 或浏览器全局能力。
+MCP EOF 只断开连接并保留页面；lease 到期和撤销仍由 runtime 逐请求执行。
+现有 `obu mcp` 保持 Chrome route，不共享 IAB endpoint 或授权。
+
 本地验证覆盖 Electron 44.7.0 / macOS arm64；Go 命令交叉编译 Linux/Windows。
 Windows socket adapter 尚未实现，私有描述符路径也需要实机验证。首版不暴露
 global/child-target CDP、文件上传下载、clipboard、history 或 WebMCP；Chrome

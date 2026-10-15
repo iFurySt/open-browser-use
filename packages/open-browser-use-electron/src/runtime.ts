@@ -321,11 +321,12 @@ export class IabRuntime implements Backend {
       };
     },
   };
-  async launchClient(options: GrantOptions & { scopeId: string; command: string; args?: string[]; env?: NodeJS.ProcessEnv; transport?: 'private' | 'socket' }): Promise<{ child: ChildProcess; revoke: () => void }> {
+  async launchClient(options: GrantOptions & { scopeId: string; command: string; args?: string[]; env?: NodeJS.ProcessEnv; transport?: 'private' | 'socket'; stdin?: 'ignore' | 'pipe' }): Promise<{ child: ChildProcess; revoke: () => void }> {
     this.scope(options.scopeId);
+    if (options.stdin !== undefined && options.stdin !== 'ignore' && options.stdin !== 'pipe') throw new Error('Invalid client stdin mode');
     const transport = options.transport ?? 'private';
     if (transport === 'socket') await this.connections.openSocket();
-    const child = spawn(options.command, options.args ?? [], { env: options.env, stdio: ['ignore', 'pipe', 'pipe', 'pipe'], shell: false });
+    const child = spawn(options.command, options.args ?? [], { env: options.env, stdio: [options.stdin ?? 'ignore', 'pipe', 'pipe', 'pipe'], shell: false });
     let grantId: string | undefined;
     try {
       await once(child, 'spawn'); this.workers.add(child);

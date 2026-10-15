@@ -3,8 +3,9 @@ import { createConnection } from 'node:net';
 import { once } from 'node:events';
 import { frame } from '../../packages/open-browser-use-electron/dist/wire.js';
 import { cursorBitmap } from '../../packages/open-browser-use-electron/dist/cursor.generated.js';
+import { connectExampleMcp } from './mcp.mjs';
 
-export async function runSmoke({ runtime, scope, fixture, surface, window, launch, present, savePage }) {
+export async function runSmoke({ runtime, scope, fixture, surface, window, launch, launchMcp, present, savePage }) {
   const checks = [];
   const check = message => { checks.push(message); console.log(`IAB smoke: ${message}`); };
   const a = await scope.tabs.create({ url: `${fixture.url}/login` });
@@ -38,6 +39,53 @@ export async function runSmoke({ runtime, scope, fixture, surface, window, launc
     assert.equal(scope.tabs.list().length,before+1);
     assert.ok(mode.startsWith('cli') ? result.result.id : result.tabId); check(`${mode}: real process / RPC / page`);
   }
+  // The MCP protocol uses stdin/stdout; browser bootstrap and RPC stay on FD 3
+  // or the authenticated socket. Never bridge agent stdio to the private FD.
+  for (const transport of ['private','socket']) {
+    const mcp = await connectExampleMcp(await launchMcp(transport));
+    let tabId;
+    try {
+      const tools = await mcp.request('tools/list');
+      assert.ok(tools.tools.some(tool=>tool.name==='snapshot'));
+      assert.ok(!tools.tools.some(tool=>tool.name==='user_tabs'));
+      const opened = await mcp.callTool('open_tab',{url:`${fixture.url}/mcp-${transport}`});
+      assert.equal(opened.isError,false); tabId = opened.structuredContent.id;
+      const list = await mcp.callTool('tabs');
+      assert.ok(list.structuredContent.result.some(tab=>tab.id===tabId));
+      assert.equal((await mcp.callTool('tabs',{session_id:'other-task'})).isError,true);
+      assert.equal((await mcp.callTool('page_info',{tab_id:a.id})).isError,false);
+      assert.equal((await mcp.callTool('snapshot',{tab_id:tabId})).isError,false);
+      const image = await mcp.callTool('screenshot',{tab_id:tabId});
+      assert.equal(image.content[0].type,'image');
+      assert.equal(Buffer.from(image.content[0].data,'base64').subarray(1,4).toString(),'PNG');
+      assert.equal((await mcp.callTool('cdp',{tab_id:tabId,method:'Browser.close'})).isError,true);
+      const foreign = await other.tabs.create();
+      assert.equal((await mcp.callTool('snapshot',{tab_id:foreign.id})).isError,true);
+      await other.tabs.close(foreign.id);
+      const input = await evaluate(tabId,'(()=>{const r=document.querySelector("#message").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
+      assert.equal((await mcp.callTool('click',{tab_id:tabId,...input})).isError,false);
+      assert.equal((await mcp.callTool('type_text',{tab_id:tabId,text:'Hello from MCP'})).isError,false);
+      assert.equal(await evaluate(tabId,'document.querySelector("#message").value'),'Hello from MCP');
+      assert.equal(await evaluate(tabId,'window.trustedInput'),true);
+      const button = await evaluate(tabId,'(()=>{const r=document.querySelector("#increment").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()');
+      assert.equal((await mcp.callTool('click',{tab_id:tabId,...button})).isError,false);
+      const deadline = Date.now()+2000;
+      while (await evaluate(tabId,'document.querySelector("#count").textContent')==='0' && Date.now()<deadline) await new Promise(r=>setTimeout(r,20));
+      assert.equal(await evaluate(tabId,'document.querySelector("#count").textContent'),'1');
+      assert.equal(await evaluate(tabId,'window.trustedClick'),true);
+    } finally { await mcp.close(); }
+    assert.ok(scope.tabs.list().some(tab=>tab.id===tabId));
+    check(`mcp-${transport}: stdio lifecycle, scoped tabs, image, trusted mouse/text, EOF retains pages`);
+  }
+  const restricted = await connectExampleMcp(await launchMcp('private',{operations:['tabs.read']}));
+  try {
+    assert.equal((await restricted.callTool('tabs')).isError,false);
+    assert.equal((await restricted.callTool('open_tab')).isError,true);
+    assert.equal((await restricted.callTool('snapshot',{tab_id:a.id})).isError,true);
+    restricted.revoke();
+    assert.equal((await restricted.callTool('tabs')).isError,true);
+  } finally { await restricted.close(); }
+  check('mcp: operation grants and revocation remain enforced by the IAB host');
   // CLI and worker processes have exited and their grants were revoked. This
   // unregistered process receives no browser response from the known endpoint.
   const endpoint = await runtime.connections.openSocket();

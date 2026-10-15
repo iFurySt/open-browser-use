@@ -197,7 +197,10 @@ lease、peer 绑定、期限和 digest 后返回成功；scope 从宿主 grant �
 
 Electron 包的 /client 已实现私有 bootstrap、原生服务端身份验证和 auth.connect，
 并继承现有 JS SDK client 来复用 browser/tab helper。
-IAB CLI 由宿主 launcher 启动并得到私有材料；MCP 接入留待后续实现。独立执行
+IAB CLI 由宿主 launcher 启动并得到私有材料；`obu iab mcp` 复用相同授权。
+MCP 的 stdin/stdout 与 FD 3 浏览器通道分离，宿主以 `stdin: 'pipe'` 启动后
+将 MCP 管道交给受信 Agent 客户端；scope 和 lease 不进入模型工具参数。
+MCP EOF 关闭连接但保留 tabs；逐请求超时重新计时，不延长宿主授予的 lease。独立执行
 `obu --socket ...` 不自动获得授权。Python SDK 和独立 Go SDK 的原生 peer 与 pipe 接入
 另行验证，不能先开放匿名兼容模式。
 

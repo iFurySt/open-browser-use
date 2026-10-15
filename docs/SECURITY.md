@@ -75,6 +75,15 @@ bypasses its own wrappers. Revocation stops queued commands and event forwarding
 completed page effects cannot be undone. Native identity lookup failure never
 falls back to a permissive implementation.
 
+`obu iab mcp` uses the same grant and authorization, with MCP on stdin/stdout
+and browser authorization on inherited FD 3. The host's agent client receives
+only the MCP pipes, not bootstrap credentials. Page tools require explicit tab
+ids and cannot select another scope/profile; host operation permissions remain
+authoritative even for the `cdp` tool. MCP EOF preserves tabs and closes its
+connection; it does not revoke other clients or dispose the task. Hosts choose
+the trusted agent/MCP client that may use these pipes and treat returned page
+content as untrusted data. No unauthenticated HTTP endpoint is added.
+
 These protections do not add authentication to the Chrome native host. Existing
 Chrome sockets still have the local-account access boundary described above.
 

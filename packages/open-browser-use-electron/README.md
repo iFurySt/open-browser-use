@@ -160,6 +160,65 @@ bookkeeping, not authorization. Without host bootstrap, commands fail rather
 than scan or fall back to Chrome. Go IAB transport is tested on macOS and
 cross-compiled for Linux/Windows; Windows IAB socket mode remains disabled.
 
+## IAB MCP for agents
+
+`obu iab mcp` exposes this IAB task as an MCP stdio server. It is separate from
+`obu mcp`, which controls the Chrome extension route. Start it from Electron
+main using the same managed authorization as other IAB clients:
+
+```ts
+const { child, revoke } = await iab.launchClient({
+  scopeId: task.id,
+  command: '/absolute/path/to/obu',
+  args: ['iab', 'mcp'],
+  transport: 'private', // 'socket' uses the same MCP interface
+  stdin: 'pipe',       // opt-in; ordinary launchClient defaults to 'ignore'
+  ttlMs: 10 * 60_000,
+  operations: ['tabs.read', 'tabs.create', 'page.control'],
+});
+// Give child.stdin (requests) and child.stdout (responses) to the host's MCP
+// client transport. Consume child.stderr separately for process diagnostics.
+// Finish with child.stdin.end(); revoke() immediately removes browser access.
+```
+
+The agent's MCP client must use these already-launched pipes. A static config
+that independently spawns `obu iab mcp` has no host bootstrap and fails closed.
+FD 3 carries only browser bootstrap/private RPC; stdin/stdout carry only MCP.
+Never forward FD 3 or bootstrap credentials to model-visible tool arguments.
+See [`integrations.mjs`](../../examples/electron-iab/integrations.mjs) and the
+dependency-free [reference MCP client](../../examples/electron-iab/mcp.mjs) for
+an end-to-end example without additional packages.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `ping`, `info`, `tabs` | `{}` | Connection, capabilities, or current task's tabs |
+| `open_tab` | `{ url? }` | New tab snapshot; omitted URL opens about:blank |
+| `close_tab` | `{ tab_id }` | Close just this tab |
+| `navigate` | `{ tab_id, url }` | Start page navigation |
+| `page_info` | `{ tab_id }` | Title, URL, readyState and up to 20000 body-text characters |
+| `snapshot` | `{ tab_id }` | CDP accessibility tree, without stable locator references |
+| `screenshot` | `{ tab_id }` | PNG as MCP image content |
+| `click` | `{ tab_id, x, y }` | Trusted left click at CSS viewport coordinates |
+| `type_text` | `{ tab_id, text }` | Insert text into the focused editable element |
+| `cdp` | `{ tab_id, method, params? }` | Host-allowlisted page CDP command |
+
+All page tools require explicit numeric `tab_id`; no implicit active-tab target,
+scope override, Chrome discovery, history, file or browser-global tools are
+exposed. The host enforces the grant on every browser request, including custom
+CDP. Tools may still be listed under a restricted grant; unauthorized operations
+return MCP tool errors. Page content remains untrusted input for the agent.
+`open_tab` creates a page but does not choose a host surface; the host decides
+which tab to present. Input tools trigger the SDK's configured feedback pulse.
+
+The server handles newline-delimited MCP requests sequentially, using the same
+protocol-version negotiation as Chrome MCP. Each browser RPC gets a fresh
+`--timeout` deadline; idle time does not consume the next request's timeout.
+Host lease expiry remains independent and requires relaunch/reauthorization.
+Navigation completion should be checked via `page_info` rather than assuming
+`navigate` waited for the document. EOF closes the authorized connection and
+exits without closing tabs or implicitly calling `turnEnded`/`finalizeTabs`.
+Task/runtime disposal remains the host's responsibility.
+
 ## Optional operation feedback
 
 Feedback is off by default. The host can enable the Browser Use cursor and a
