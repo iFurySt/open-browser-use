@@ -233,7 +233,7 @@ export class IabRuntime implements Backend {
     if (params.session_id !== undefined && params.session_id !== scopeId) throw new Error('IAB_SCOPE_MISMATCH');
     const need = (operation: Operation) => { if (!operations.includes(operation)) throw new Error('IAB_OPERATION_DENIED'); };
     switch (method) {
-      case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.0.0', metadata: { instanceId: this.instanceId, scopeId },
+      case 'getInfo': return { name: 'Open Browser Use IAB', type: 'iab', version: '1.1.0', metadata: { instanceId: this.instanceId, scopeId },
         capabilities: { multiTab: true, fileUploads: false, downloads: false, clipboard: false, history: false, childTargets: false } };
       case 'ping': return 'pong';
       case 'getTabs': case 'getUserTabs': need('tabs.read'); return this.listTabs(scopeId);

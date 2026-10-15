@@ -1,6 +1,6 @@
 {
   "name": "open-browser-use-electron",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Embeddable multi-tab Electron browser with private RPC and authenticated local sockets.",
   "type": "module",
   "license": "MIT",

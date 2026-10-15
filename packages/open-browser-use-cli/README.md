@@ -8,15 +8,13 @@ small action plan instead of a JavaScript/Python SDK script.
 
 ## Electron IAB
 
-The source CLI also includes `obu iab` for Electron hosts using
+CLI 1.1.0 and later include `obu iab` for Electron hosts using
 [`open-browser-use-electron`](../open-browser-use-electron/README.md).
 The host launches the command with private bootstrap on inherited FD 3;
 commands cannot discover an IAB or obtain authorization from a socket path.
 Private and authenticated socket modes support `info`, `ping`, `tabs`,
 `open-tab`, `navigate`, `close-tab`, `cdp`, `call` and `turn-ended`.
 See the [runnable example](../../examples/electron-iab/README.md).
-This is a source addition awaiting release; installed CLI 1.0.0 packages may
-not include it yet.
 
 ## Install
 

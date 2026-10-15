@@ -4,6 +4,7 @@
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-10-15 | Open Browser Use 1.1 | Electron app 可嵌入多 tab 浏览器，并通过 CLI 或 MCP 授权 Agent 操作页面。 | 发布 `v1.1.0`：新增 `obu iab` / `obu iab mcp`、命名 profile、多 tab scope、私有 FD 通道与进程身份/lease 鉴权 socket；SDK 提供可配置鼠标和四边同色光效，附可重复五步示例及地址栏/导航/loading。CLI、JS/Python SDK 与 extension 沿用标准发布渠道；Electron SDK 随源码交付，尚未配置独立 npm 发布。 |
 | 2026-10-15 | Electron IAB MCP | Agent 可通过标准 MCP tools 操作宿主授权的多 tab 浏览器。 | 新增 `obu iab mcp`，stdio 与 FD 3 私有授权分离，支持 private/socket；提供显式 tab 的导航、快照、图片截图、真实鼠标和输入、受限 CDP。SDK 可选 piped stdin；EOF 保留页面，scope/lease/操作权限仍由宿主校验。 |
 | 2026-10-15 | IAB 光效参数 | 接入方可独立开关边缘光效，并按应用风格指定颜色。 | SDK 提供 `edgeGlow` 与 `edgeGlowColor`，初始化和运行时更新均可用；默认蓝色，支持短/长十六进制颜色，四边同色淡出。关闭保留颜色，鼠标独立；非法颜色不修改既有配置。 |
 | 2026-10-15 | IAB 重复动作测试 | 可反复点击任一动作观察鼠标和边缘光效，不必每次重跑整套。 | 取消手动 1–5 的顺序锁；1/2/5 重复新开页面，3/4 在最近 Tab 1/2 重复操作；缺少目标提示打开对应页，执行中仍防并发。仅一键重放清理旧页。 |
