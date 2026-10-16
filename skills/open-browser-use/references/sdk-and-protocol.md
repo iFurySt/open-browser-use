@@ -403,14 +403,16 @@ _, err := browser.Client.Request("executeCdp", obu.Params{
 })
 ```
 
-## User Tab Claiming
+## OBU-Owned Tab Claiming
 
 1. List open user tabs with `open-browser-use user-tabs --session-id "$OBU_SESSION_ID"` or SDK `getUserTabs`.
-2. Select the tab from returned data using visible evidence: title, URL, recency, and group.
+2. Select only a tab that is already in an Open Browser Use-owned group. Eligible groups are `✅ Open Browser Use` and task groups whose title ends with ` - OBU`.
 3. Claim it with `open-browser-use claim-tab --session-id "$OBU_SESSION_ID" --tab-id <id>` or SDK `claimUserTab` / `claim_user_tab` / `ClaimUserTab`.
 4. Use the returned controllable tab for later commands.
 
-Never invent or reuse stale tab ids.
+Never claim ungrouped user tabs or tabs in non-OBU groups, even when their URL,
+title, or localhost port appears to match the task. Open a new managed tab
+instead. Never invent or reuse stale tab ids.
 
 ## Tab Cleanup
 
