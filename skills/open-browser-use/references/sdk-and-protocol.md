@@ -281,6 +281,12 @@ when the extension WebMCP gate and content-script registration are active.
 The target tab must already belong to the current Open Browser Use session.
 Create it with `open-tab`, or list user tabs and claim the chosen tab first.
 
+Chrome 155 accepts an input object in `executeTool`. The extension passes the
+object first. It uses the older JSON string format only when the native API
+returns `UnknownError: Failed to parse input arguments` before a tool starts.
+Other tool errors and aborted calls are not retried. After an extension update,
+reload the page, then check both discovery and one read-only tool call.
+
 List the current tool snapshot:
 
 ```sh

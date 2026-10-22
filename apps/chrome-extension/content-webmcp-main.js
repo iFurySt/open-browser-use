@@ -112,9 +112,19 @@
         throw new Error("WebMCP tool input must be JSON serializable");
       }
       const rawResult = await Promise.race([
-        Promise.resolve(
-          modelContext.executeTool(registration.tool, inputJson, { signal: controller.signal })
-        ),
+        Promise.resolve().then(() =>
+          modelContext.executeTool(registration.tool, request.input, { signal: controller.signal })
+        ).catch((error) => {
+          if (
+            error?.name !== "UnknownError" ||
+            !error.message.startsWith("Failed to parse input arguments") ||
+            controller.signal.aborted
+          ) {
+            throw error;
+          }
+          // Chrome before 155 rejects object input before the tool starts.
+          return modelContext.executeTool(registration.tool, inputJson, { signal: controller.signal });
+        }),
         new Promise((_, reject) => {
           timeoutId = setTimeout(() => {
             controller.abort();

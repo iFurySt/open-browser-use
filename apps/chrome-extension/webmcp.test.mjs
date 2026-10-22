@@ -65,14 +65,24 @@ function createRuntimeFake() {
   return runtime;
 }
 
-function createModelContext(tools) {
+function createModelContext(tools, { legacyInput = false } = {}) {
   const listeners = new Set();
   return {
     async getTools() {
       return tools;
     },
-    async executeTool(tool, inputJson, options) {
-      return await tool.__execute(JSON.parse(inputJson), options);
+    executeTool(tool, input, options) {
+      if (legacyInput) {
+        if (typeof input !== "string") {
+          const error = new DOMException("Failed to parse input arguments", "UnknownError");
+          if (legacyInput === "async") return Promise.reject(error);
+          throw error;
+        }
+        input = JSON.parse(input);
+      } else {
+        assert.equal(typeof input, "object", "Chrome 155 requires an input object");
+      }
+      return tool.__execute(input, options);
     },
     addEventListener(type, listener) {
       if (type === "toolchange") listeners.add(listener);
@@ -165,70 +175,98 @@ async function loadBrowserBackend() {
   return context.__BrowserBackend;
 }
 
-test("WebMCP bridge lists a snapshot and invokes its registered tool", async () => {
-  const registeredTool = {
-    name: "book_table",
-    title: "Book table",
-    description: "Book a table at the fixture restaurant.",
-    inputSchema: JSON.stringify({
+for (const legacyInput of [false, "sync", "async"]) {
+  test(`WebMCP bridge invokes a tool with ${legacyInput ? `legacy ${legacyInput}` : "Chrome 155 object"} input`, async () => {
+    let executions = 0;
+    const registeredTool = {
+      name: "book_table",
+      title: "Book table",
+      description: "Book a table at the fixture restaurant.",
+      inputSchema: JSON.stringify({
+        type: "object",
+        properties: { partySize: { type: "integer" } },
+        required: ["partySize"]
+      }),
+      annotations: {
+        readOnlyHint: false,
+        untrustedContentHint: true,
+        unsupportedHint: "ignored"
+      },
+      origin: "https://fixture.example.test",
+      async __execute(input, options) {
+        executions += 1;
+        assert.deepEqual(input, { partySize: 4 });
+        assert.equal(options.signal.aborted, false);
+        return JSON.stringify({ reservationId: "r-42", partySize: input.partySize });
+      }
+    };
+    const modelContext = createModelContext([registeredTool], { legacyInput });
+    const { runtime } = await loadBridgeHarness({ modelContext });
+
+    assert.deepEqual(
+      json(await runtime.sendToContent({ type: "OPEN_BROWSER_USE_WEBMCP_PING" })),
+      { ok: true }
+    );
+
+    const listed = await runtime.sendToContent({
+      type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
+      action: "list"
+    });
+    assert.equal(listed.ok, true);
+    const tool = json(listed.result.tools[0]);
+    assert.equal(tool.name, "book_table");
+    assert.equal(typeof tool.registration_id, "string");
+    assert.deepEqual(tool.input_schema, {
       type: "object",
       properties: { partySize: { type: "integer" } },
       required: ["partySize"]
-    }),
-    annotations: {
+    });
+    assert.deepEqual(tool.annotations, {
       readOnlyHint: false,
-      untrustedContentHint: true,
-      unsupportedHint: "ignored"
-    },
-    origin: "https://fixture.example.test",
-    async __execute(input, options) {
-      assert.deepEqual(input, { partySize: 4 });
-      assert.equal(options.signal.aborted, false);
-      return JSON.stringify({ reservationId: "r-42", partySize: input.partySize });
+      untrustedContentHint: true
+    });
+    assert.equal(tool.origin, "https://fixture.example.test");
+    assert.equal(tool.pageUrl, "https://fixture.example.test/demo");
+
+    const invoked = await runtime.sendToContent({
+      type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
+      action: "invoke",
+      tool_name: tool.name,
+      registration_id: tool.registration_id,
+      input: { partySize: 4 },
+      timeout_ms: 1_000
+    });
+    assert.deepEqual(json(invoked), {
+      ok: true,
+      result: {
+        result: { reservationId: "r-42", partySize: 4 }
+      }
+    });
+    assert.equal(executions, 1);
+  });
+}
+
+test("WebMCP bridge does not retry a tool error", async () => {
+  let executions = 0;
+  const tool = {
+    name: "failed_write",
+    async __execute() {
+      executions += 1;
+      throw new Error("Failed to parse input arguments in the site tool");
     }
   };
-  const modelContext = createModelContext([registeredTool]);
-  const { runtime } = await loadBridgeHarness({ modelContext });
-
-  assert.deepEqual(
-    json(await runtime.sendToContent({ type: "OPEN_BROWSER_USE_WEBMCP_PING" })),
-    { ok: true }
-  );
-
-  const listed = await runtime.sendToContent({
-    type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
-    action: "list"
-  });
-  assert.equal(listed.ok, true);
-  const tool = json(listed.result.tools[0]);
-  assert.equal(tool.name, "book_table");
-  assert.equal(typeof tool.registration_id, "string");
-  assert.deepEqual(tool.input_schema, {
-    type: "object",
-    properties: { partySize: { type: "integer" } },
-    required: ["partySize"]
-  });
-  assert.deepEqual(tool.annotations, {
-    readOnlyHint: false,
-    untrustedContentHint: true
-  });
-  assert.equal(tool.origin, "https://fixture.example.test");
-  assert.equal(tool.pageUrl, "https://fixture.example.test/demo");
-
+  const { runtime } = await loadBridgeHarness({ modelContext: createModelContext([tool]) });
+  const listed = await runtime.sendToContent({ type: "OPEN_BROWSER_USE_WEBMCP_REQUEST", action: "list" });
   const invoked = await runtime.sendToContent({
     type: "OPEN_BROWSER_USE_WEBMCP_REQUEST",
     action: "invoke",
     tool_name: tool.name,
-    registration_id: tool.registration_id,
-    input: { partySize: 4 },
-    timeout_ms: 1_000
+    registration_id: listed.result.tools[0].registration_id,
+    input: {}
   });
-  assert.deepEqual(json(invoked), {
-    ok: true,
-    result: {
-      result: { reservationId: "r-42", partySize: 4 }
-    }
-  });
+  assert.equal(invoked.ok, false);
+  assert.match(invoked.error, /Failed to parse input arguments in the site tool/);
+  assert.equal(executions, 1);
 });
 
 test("WebMCP bridge rejects a registration after toolchange", async () => {
