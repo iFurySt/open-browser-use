@@ -13,7 +13,7 @@
 > [!TIP]
 > Interested in Computer Use? Check out [open-computer-use](https://github.com/iFurySt/open-codex-computer-use).
 
-`open-browser-use` is a browser automation layer that stays neutral across
+`open-browser-use` is a browser automation layer for Chrome and Zen Browser that stays neutral across
 agent runtimes. It is also an open-source alternative to the Chrome Browser Use
 capability recently shipped in Codex.app. For the story behind it, see the
 [Browser Use Deep Dive](https://www.ifuryst.com/en/blog/2026/open-browser-use/).
@@ -71,6 +71,39 @@ same keyed manual-install flow:
 ```bash
 open-browser-use setup --zip /absolute/path/to/open-browser-use-chrome-extension.zip
 ```
+
+### Set Up Zen Browser (Experimental)
+
+Download `open-browser-use-zen-extension-<version>.xpi` from the matching
+[GitHub Release](https://github.com/iFurySt/open-browser-use/releases). In Zen,
+open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**,
+and select the XPI. This unsigned temporary add-on is removed when Zen restarts;
+load it again before using the CLI. This is a development installation, not a
+persistent signed release. Then register the Firefox native messaging host:
+
+```bash
+open-browser-use install-manifest --browser zen
+open-browser-use profiles --connected
+open-browser-use info --browser zen
+```
+
+Open the Open Browser Use extension popup once and choose **Enable page
+interaction**. Zen asks for one global `userScripts` permission; after it is
+granted, it applies across ordinary websites without prompting for each site.
+After loading the temporary add-on again, check the popup and grant permission
+again if needed.
+
+Zen is Firefox-based, so it does not expose Chrome's extension debugger API.
+The Zen route supports tabs, history, navigation, page information, JavaScript
+evaluation, downloads, clipboard helpers, cursor movement, and session cleanup.
+Arbitrary Chrome-only CDP methods and native file chooser injection are not
+available. The host provides `snapshot`, `evaluate`, `click`, guarded `fill`,
+`wait-for`, `screenshot`, and `set-input-files` commands for both routes. Screenshots
+support PNG/JPEG, clips and full pages via Firefox tabs.captureTab; load the
+updated XPI first. Zen file-input uploads
+use synthetic File/DataTransfer events and accept at most 512 KiB combined; no
+form submission is invoked. Run `capabilities` on the selected route and see the
+[command parameters](skills/open-browser-use/references/agent-commands.md).
 
 ### Use It
 

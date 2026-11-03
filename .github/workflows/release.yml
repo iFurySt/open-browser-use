@@ -105,6 +105,11 @@ jobs:
             echo "Chrome extension crx not found" >&2
             exit 1
           fi
+          zen_extension_xpi="$(find dist/zen-extension -maxdepth 1 -type f -name '*.xpi' -print -quit)"
+          if [ -z "${zen_extension_xpi}" ]; then
+            echo "Zen extension xpi not found" >&2
+            exit 1
+          fi
           skill_zip="dist/skills/open-browser-use-skill.zip"
           if [ ! -f "${skill_zip}" ]; then
             echo "Open Browser Use skill zip not found" >&2
@@ -117,6 +122,7 @@ jobs:
           fi
           echo "chrome_extension_zip=${chrome_extension_zip}" >> "${GITHUB_OUTPUT}"
           echo "chrome_extension_crx=${chrome_extension_crx}" >> "${GITHUB_OUTPUT}"
+          echo "zen_extension_xpi=${zen_extension_xpi}" >> "${GITHUB_OUTPUT}"
           echo "skill_zip=${skill_zip}" >> "${GITHUB_OUTPUT}"
           echo "skill_bundle=${skill_bundle}" >> "${GITHUB_OUTPUT}"
 
@@ -140,6 +146,8 @@ jobs:
             dist/chrome-extension/*.zip
             dist/chrome-extension/*.crx
             dist/chrome-extension/*.json
+            dist/zen-extension/*.xpi
+            dist/zen-extension/*.json
             dist/skills/*.zip
             dist/skills/*.skill
             dist/skills/*.json
@@ -152,6 +160,7 @@ jobs:
           subject-path: |
             dist/chrome-extension/*.zip
             dist/chrome-extension/*.crx
+            dist/zen-extension/*.xpi
             dist/cli/*.tar.gz
             dist/cli/*.zip
             dist/skills/*.zip
@@ -168,6 +177,7 @@ jobs:
             dist/cli/*.zip
             dist/chrome-extension/*.zip
             dist/chrome-extension/*.crx
+            dist/zen-extension/*.xpi
             dist/skills/*.zip
             dist/skills/*.skill
           )

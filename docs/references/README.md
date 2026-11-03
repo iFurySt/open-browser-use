@@ -22,3 +22,5 @@
 - `codex-chrome-extension-1.1.4/`：Codex Chrome Web Store extension
   `hehggadaopoacecdllhhajmbjkdcmajg` 的本机安装快照、格式化入口文件和
   native messaging host 形状记录。
+
+- `zen-native-messaging.md`：Zen/Firefox native manifest 源码依据和 Windows 验证边界。

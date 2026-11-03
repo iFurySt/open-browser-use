@@ -204,7 +204,7 @@ func mcpErrorResponse(id any, code int, message string) map[string]any {
 }
 
 func mcpTools() []mcpTool {
-	return []mcpTool{
+	tools := []mcpTool{
 		{
 			Name:        "ping",
 			Title:       "Ping Browser Backend",
@@ -387,6 +387,7 @@ func mcpTools() []mcpTool {
 			}, []string{"script"}),
 		},
 	}
+	return append(append(tools, domMCPTools()...), screenshotMCPTool())
 }
 
 func emptyObjectSchema() map[string]any {
@@ -458,6 +459,9 @@ func (server *mcpServer) callTool(params json.RawMessage) (map[string]any, error
 }
 
 func (server *mcpServer) runTool(name string, arguments map[string]any) (any, error) {
+	if name == "screenshot" {
+		return server.runScreenshotTool(arguments)
+	}
 	switch name {
 	case "ping":
 		return server.invoke("ping", map[string]any{})
@@ -526,7 +530,7 @@ func (server *mcpServer) runTool(name string, arguments map[string]any) (any, er
 		}
 		return server.runner.run(script)
 	default:
-		return nil, fmt.Errorf("unknown tool: %s", name)
+		return server.runDOMTool(name, arguments)
 	}
 }
 
@@ -683,6 +687,13 @@ func mcpToolResult(output any) (map[string]any, error) {
 			"isError": false,
 		}, nil
 	}
+	var screenshot *screenshotResult
+	if result, ok := output.(screenshotResult); ok && result.Data != "" {
+		screenshot = &result
+		metadata := result
+		metadata.Data = ""
+		output = metadata
+	}
 	payload, err := json.Marshal(output)
 	if err != nil {
 		return nil, err
@@ -691,7 +702,7 @@ func mcpToolResult(output any) (map[string]any, error) {
 	if _, ok := output.(map[string]any); !ok {
 		structured = map[string]any{"result": output}
 	}
-	return map[string]any{
+	result := map[string]any{
 		"content": []map[string]any{
 			{
 				"type": "text",
@@ -700,7 +711,11 @@ func mcpToolResult(output any) (map[string]any, error) {
 		},
 		"structuredContent": structured,
 		"isError":           false,
-	}, nil
+	}
+	if screenshot != nil {
+		result["content"] = append(result["content"].([]map[string]any), map[string]any{"type": "image", "data": screenshot.Data, "mimeType": screenshot.MimeType})
+	}
+	return result, nil
 }
 
 func mcpToolErrorResult(message string) map[string]any {

@@ -11,10 +11,16 @@ const repoLink = document.getElementById("repo-link");
 const extensionVersion = document.getElementById("extension-version");
 const platformLabel = document.getElementById("platform-label");
 const cliCommands = document.getElementById("cli-commands");
+const interactionPanel = document.getElementById("interaction-panel");
+const interactionStatus = document.getElementById("interaction-status");
+const interactionCopy = document.getElementById("interaction-copy");
+const enableInteraction = document.getElementById("enable-interaction");
+const interactionError = document.getElementById("interaction-error");
 const chromeApi = globalThis.chrome;
 
 renderExtensionVersion();
 renderInstallCommands();
+void initializePageInteraction();
 void refreshStatus();
 setInterval(() => {
   void refreshStatus();
@@ -27,6 +33,75 @@ repoLink?.addEventListener("click", (event) => {
   event.preventDefault();
   void chromeApi.tabs.create({ url: REPO_URL });
 });
+
+enableInteraction?.addEventListener("click", () => {
+  interactionError.hidden = true;
+  interactionError.textContent = "";
+  enableInteraction.disabled = true;
+
+  const request = chromeApi?.permissions?.request?.({ permissions: ["userScripts"] });
+  if (!request) {
+    renderPageInteraction(false, "Zen does not expose the required userScripts permission API.");
+    return;
+  }
+
+  void request
+    .then(async (granted) => {
+      if (!granted) {
+        renderPageInteraction(false, "Permission was not granted.");
+        return;
+      }
+      const setup = await chromeApi.runtime.sendMessage({
+        type: "ENABLE_OPEN_BROWSER_USE_PAGE_INTERACTION"
+      });
+      if (setup?.ok !== true) {
+        renderPageInteraction(false, setup?.error ?? "Page interaction setup failed.");
+        return;
+      }
+      renderPageInteraction(true);
+      const tabs = await chromeApi.tabs.query({ active: true, currentWindow: true });
+      if (Number.isInteger(tabs[0]?.id)) {
+        await chromeApi.tabs.reload(tabs[0].id);
+      }
+    })
+    .catch((error) => {
+      renderPageInteraction(false, error instanceof Error ? error.message : String(error));
+    });
+});
+
+async function initializePageInteraction() {
+  const optionalPermissions = chromeApi?.runtime?.getManifest?.().optional_permissions;
+  if (!Array.isArray(optionalPermissions) || !optionalPermissions.includes("userScripts")) {
+    return;
+  }
+
+  interactionPanel.hidden = false;
+  try {
+    const granted = await chromeApi.permissions.contains({ permissions: ["userScripts"] });
+    if (!granted) {
+      renderPageInteraction(false);
+      return;
+    }
+    const setup = await chromeApi.runtime.sendMessage({
+      type: "ENABLE_OPEN_BROWSER_USE_PAGE_INTERACTION"
+    });
+    renderPageInteraction(setup?.ok === true, setup?.ok === true ? "" : setup?.error);
+  } catch (error) {
+    renderPageInteraction(false, error instanceof Error ? error.message : String(error));
+  }
+}
+
+function renderPageInteraction(enabled, error = "") {
+  interactionStatus.dataset.state = enabled ? "enabled" : "disabled";
+  interactionStatus.textContent = enabled ? "Enabled" : "Disabled";
+  interactionCopy.textContent = enabled
+    ? "Open Browser Use can read page content, fill forms, and interact with ordinary websites."
+    : "Enable this once to let Open Browser Use read page content, fill forms, and interact with ordinary websites. The current tab reloads once to activate it.";
+  enableInteraction.hidden = enabled;
+  enableInteraction.disabled = false;
+  interactionError.hidden = error === "";
+  interactionError.textContent = error;
+}
 
 async function refreshStatus() {
   if (!chromeApi?.runtime?.sendMessage) {
@@ -101,6 +176,10 @@ function detectPlatform() {
     globalThis.navigator?.userAgent ??
     "";
   const platform = String(rawPlatform).toLowerCase();
+  const isFirefox = String(globalThis.navigator?.userAgent ?? "").toLowerCase().includes("firefox");
+  const npmCommand = isFirefox
+    ? "npm install -g open-browser-use && open-browser-use install-manifest --browser zen"
+    : "npm install -g open-browser-use && open-browser-use setup";
 
   if (platform.includes("mac")) {
     return {
@@ -108,11 +187,13 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         },
         {
           label: "Homebrew",
-          command: "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use setup"
+          command: isFirefox
+            ? "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use install-manifest --browser zen"
+            : "brew install iFurySt/open-browser-use/open-browser-use && open-browser-use setup"
         }
       ]
     };
@@ -124,7 +205,7 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         }
       ]
     };
@@ -136,7 +217,7 @@ function detectPlatform() {
       commands: [
         {
           label: "npm",
-          command: "npm install -g open-browser-use && open-browser-use setup"
+          command: npmCommand
         }
       ]
     };
@@ -147,7 +228,7 @@ function detectPlatform() {
     commands: [
       {
         label: "npm",
-        command: "npm install -g open-browser-use && open-browser-use setup"
+        command: npmCommand
       }
     ]
   };

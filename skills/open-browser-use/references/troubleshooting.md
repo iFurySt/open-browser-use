@@ -4,6 +4,12 @@ Read this reference when setup, connection, browser control, file upload, downlo
 
 ## First Checks
 
+Select the browser/profile first with `profiles --connected --json`. Then pass
+`--browser` and `--profile` to every command below; an unselected command may
+connect to another host through `active.json`. Use `capabilities` to distinguish
+backend support from missing permission. A missing `connected` flag can be a
+short probe timeout; retry or use `info` on the explicit route.
+
 Start with:
 
 ```sh
@@ -17,11 +23,11 @@ Do not reuse the CLI fallback session for agent browser work.
 
 If these fail:
 
-1. Confirm Chrome is installed.
-2. Confirm Chrome is running.
+1. Confirm the selected Chrome or Zen browser is installed.
+2. Confirm the selected browser is running.
 3. Confirm the Open Browser Use extension is installed and enabled.
-4. Confirm the native host manifest is installed with `open-browser-use install-manifest` or rerun `open-browser-use setup`.
-5. Ask the user to approve any Chrome extension prompt.
+4. Confirm the native host manifest is installed with `open-browser-use install-manifest` (use `--browser zen` for Zen) or rerun the matching setup flow.
+5. Ask the user to approve any browser extension prompt.
 
 Do not silently install, enable, or repair browser integration when the action needs user approval.
 
@@ -41,7 +47,7 @@ open-browser-use ping --socket-dir /tmp/open-browser-use
 open-browser-use ping --timeout 20s
 ```
 
-If no active host exists, opening Chrome with the extension enabled can allow Chrome to start the native host.
+If no active host exists, opening the selected browser with the extension enabled can allow it to start the native host.
 
 ## Extension Or Native Host Mismatch
 
@@ -70,7 +76,7 @@ open-browser-use setup --extension-id <chrome-extension-id>
 
 ## File Upload Issues
 
-Use the Open Browser Use file chooser flow rather than native OS picker automation where possible.
+Chrome supports the native file chooser flow. Zen does not: use `set-input-files` for authorized files up to 512 KiB combined, or have the user select larger files. Synthetic file events may be rejected by sites requiring trusted selection. Existing selections require explicit replacement; see [agent-commands.md](agent-commands.md).
 
 If Chrome blocks local file access for the extension, ask the user to open `chrome://extensions`, open Open Browser Use extension details, and enable file URL access if the task requires local file URLs.
 
@@ -78,7 +84,7 @@ If Chrome blocks local file access for the extension, ask the user to open `chro
 
 - History, debugger, downloads, tab groups, and broad host access are high-privilege browser capabilities.
 - Clipboard reads/writes should happen only for the user-requested task.
-- If the user is on a login, payment, approval, CAPTCHA, or destructive workflow, pause and ask before continuing.
+- Honor existing authorization. Pause only for an unauthorized action or a human-only login, permission, CAPTCHA, hardware key, or confirmation step; preserve the tab.
 
 ## When To Escalate To The User
 
@@ -88,4 +94,4 @@ Ask the user for help when:
 - Chrome is closed and opening it would interrupt their session.
 - Chrome requires extension confirmation or enablement.
 - The page requires login, CAPTCHA, hardware key, payment confirmation, or another human-only step.
-- The requested browser action affects external systems.
+- The requested external action has not already been authorized by the user.

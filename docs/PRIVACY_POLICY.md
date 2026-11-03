@@ -1,10 +1,10 @@
 # Open Browser Use Privacy Policy
 
-Last updated: May 9, 2026
+Last updated: July 13, 2026
 
-Open Browser Use is a Chrome extension that connects Chrome to a local Open
-Browser Use native messaging host. It is designed for browser automation by
-compatible local agent tools.
+Open Browser Use provides Chrome and Zen Browser extensions that connect the
+browser to a local Open Browser Use native messaging host. It is designed for
+browser automation by compatible local agent tools.
 
 ## Data handled by the extension
 
@@ -14,6 +14,10 @@ user or a paired local agent chooses to automate. Depending on the pages being
 used, this can include personally identifiable information, authentication
 information, personal communications, financial information, health information,
 location information, web history, user activity, and website content.
+
+On Zen Browser, reading and interacting with page content requires a one-time
+optional page interaction permission. The permission applies globally to
+ordinary websites and can be revoked from Zen's extension permissions UI.
 
 ## How data is used
 
@@ -35,7 +39,7 @@ local tools.
 
 ## Data storage
 
-The extension may store local operational state in Chrome extension storage,
+The extension may store local operational state in browser extension storage,
 such as session metadata needed to recover tab groups and native host status.
 This data remains in the user's Chrome profile unless the user removes the
 extension or clears browser extension data.

@@ -13,10 +13,45 @@
 
 | 区域 | 评分 | 原因 | 下一步 |
 | --- | --- | --- | --- |
-| 产品面 | B | Chrome extension、Go native host/CLI、JS SDK、Python SDK、Go SDK、file chooser、Chrome Web Store 发布链路、SDK registry 发布链路和真实 Chrome smoke 记录已成形。 | 补首轮用户安装说明和更多失败场景验收。 |
+| 产品面 | B | Chrome extension、Zen/Firefox compatibility extension、Go native host/CLI、JS SDK、Python SDK、Go SDK、file chooser、Chrome Web Store 发布链路、SDK registry 发布链路和真实 Chrome smoke 记录已成形。 | 补 Zen XPI 签名/商店分发和真实 Zen smoke，并继续补失败场景验收。 |
 | 架构文档 | B | Chrome route completed plan、架构、安全、发布和 reference 文档已覆盖主要边界。 | 把 extension-host runtime 的状态机和错误恢复策略补成单独文档。 |
-| 插件 UI | B | MV3 popup、icons、content cursor 和基础打包校验已具备。 | 补 popup 截图 smoke 和权限状态展示验收。 |
-| 测试 | B | `make ci` 覆盖 docs/repo hygiene、action pinning、extension 打包、脚本语法、Go 测试、JS/Python/Go SDK 协议测试、Python SDK smoke 和 fake native host/extension peer relay 测试。 | 补真实 Chrome 自动化 smoke 和 popup 截图 smoke。 |
+| 插件 UI | B | MV3 popup、icons、content cursor、Zen page interaction 权限状态和基础打包校验已具备。 | 补 popup 截图 smoke 和真实 Zen 权限授权验收。 |
+| 测试 | B | `make ci` 覆盖 docs/repo hygiene、action pinning、Chrome/Zen extension 打包、脚本语法、Go 测试、Firefox adapter 测试、JS/Python/Go SDK 协议测试、Python SDK smoke 和 fake native host/extension peer relay 测试。 | 补真实 Chrome/Zen 自动化 smoke 和 popup 截图 smoke。 |
 | 可观测性 | C | native host 和 extension 已有基础错误传播，但跨 Native Messaging、Unix socket 和 SDK 的关联日志仍不足。 | 增加 request id、事件分层日志和可脱敏 debug trace。 |
 | 安全 | C | Chrome route 明确不内置上层站点策略，manifest origin 限制和本地 socket 文件权限已有默认约束。 | 补 socket token/peer 授权、失败路径安全测试和安装权限审计说明。 |
 | Electron IAB | B | runtime、会话多 tab、命名 profile、private/socket transport、原生 peer/lease 鉴权、IAB CLI/MCP 和本地 Electron smoke 已成形；MCP 覆盖真实输入、图片与 scope/grant 拒绝。 | 扩展 Electron/OS 验证矩阵、Windows private transport 验证和 native addon 发布链路；global/child-target CDP 与文件能力仍明确禁用。 |
+
+
+## Zen compatibility verification boundary
+
+PR #14 follow-up adds regression coverage for Windows family manifest
+coexistence and ungrouped session ownership (concurrent claims, restored state,
+reclaims, handoff/deliverable cleanup). The targeted Windows CI job does not
+exercise registry writes or a real Zen browser. Persistent signed installation
+and real Windows/Zen runtime smoke remain outstanding.
+
+## Zen agent command verification (2026-10-07)
+
+The shared Go CLI/MCP DOM helpers have regression coverage for payload fidelity,
+error propagation, route pinning, and upload limits. An opt-in real Zen test
+(`OBU_LIVE_ZEN_PROFILE=... go test ./cmd/open-browser-use -run TestLiveZenDOM`)
+passed on Linux with the existing Firefox extension 0.1.41: bounded inspection,
+readiness, native setters/events, expected-value guards, blocked targets, promises,
+file bytes/replacement, and no implicit submission. It creates and finalizes only
+its own localhost fixture tab. This does not validate Windows GUI behavior,
+Chrome helper runtime behavior, trusted events, or production site compatibility.
+
+## Zen screenshot verification (2026-10-07)
+
+Screenshot regression tests cover ownership, parameter rejection, capability
+discovery for older/newer extensions, protected output files, and MCP image
+blocks. A disposable headless Zen 1.22.2b instance loaded the packaged updated
+XPI and exercised screenshots through the real OBU native host/Go runner:
+viewport 1167x752, PNG clip 400x200 with scale 2, JPEG clip 120x90, and full-page
+1167x2400. Pixel checks verified the fixture color and offscreen footer.
+
+The Linux-only `scripts/zen-screenshot-smoke.py` uses geckodriver only to start
+the isolated browser/install the XPI and grant test-profile permissions; capture
+uses OBU. It requires geckodriver, a Zen binary, packaged XPI and native host.
+Normal user profiles are not changed. Chrome runtime screenshots and Windows
+screenshot runtime behavior were not exercised by this smoke.

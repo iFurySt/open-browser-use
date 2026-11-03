@@ -4,7 +4,7 @@ Read this reference when the task requires multi-step automation, integration in
 
 ## Connection Model
 
-The Chrome extension starts the native host through Chrome Native Messaging. The native host exposes a local socket and writes the active socket registry so the CLI and SDKs can discover it.
+The Chrome or Zen extension starts the native host through browser Native Messaging. The native host exposes a local socket and writes the active socket registry so the CLI and SDKs can discover it.
 
 Default route:
 
@@ -13,8 +13,8 @@ agent runtime
   -> open-browser-use CLI, MCP server, or SDK
   -> active Open Browser Use socket
   -> native messaging host
-  -> Chrome extension
-  -> Chrome tabs / debugger / history / downloads
+  -> Chrome or Zen extension
+  -> browser tabs / debugger-compatible adapter / history / downloads
 ```
 
 Pass an explicit socket only when the runtime provides one:
@@ -39,7 +39,7 @@ tasks.
 Install the SDK package from the package registry for your runtime:
 
 ```sh
-npm install open-browser-use-sdk
+pnpm add open-browser-use-sdk
 pip install open-browser-use-sdk
 go get github.com/ifuryst/open-browser-use/packages/open-browser-use-go
 ```
@@ -374,6 +374,8 @@ args = ["mcp", "--session-id", "obu-<task-or-conversation-id>"]
 mirror the CLI action surface:
 
 - `ping`, `info`, `tabs`, `user_tabs`, `history`
+- `connected_profiles`, `select_browser`, `capabilities`
+- `snapshot`, `evaluate`, `click`, `fill`, `wait_for`, `set_input_files` (see [agent-commands.md](agent-commands.md))
 - `open_tab`, `claim_tab`, `navigate`, `wait_load`, `page_info`
 - `cdp`, `move_mouse`, `wait_file_chooser`, `set_file_chooser_files`
 - `name_session`, `finalize_tabs`, `turn_ended`, `call`, `run_action_plan`
@@ -437,6 +439,10 @@ more browser work is needed, do it before finalizing, then finalize once with
 the final tab disposition.
 
 ## File Chooser Pattern
+
+This native chooser flow is Chrome-only. For Zen use `set-input-files` / MCP
+`set_input_files` for authorized files totaling at most 512 KiB; see
+[agent-commands.md](agent-commands.md). Larger files require manual selection.
 
 1. Start waiting with `wait-file-chooser --tab-id <id>` or SDK `waitForFileChooser` / `wait_for_file_chooser` / `WaitForFileChooser`.
 2. Trigger the file picker in the page, usually through a click driven by CDP or a higher-level automation layer.

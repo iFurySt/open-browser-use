@@ -201,6 +201,80 @@ dd {
   font-size: 12px;
 }
 
+.interaction-panel {
+  display: block;
+}
+
+.interaction-panel[hidden] {
+  display: none;
+}
+
+.permission-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid #d9dee7;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #4b5565;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 2px 8px;
+  box-sizing: border-box;
+}
+
+.permission-pill[data-state="enabled"] {
+  border-color: #c9ead5;
+  background: #f0fbf4;
+  color: #146c33;
+}
+
+.permission-pill[data-state="disabled"] {
+  border-color: #f3d9b2;
+  background: #fff8ed;
+  color: #8a4b00;
+}
+
+.permission-copy {
+  margin-top: 10px;
+  color: #535e70;
+  font-size: 12px;
+}
+
+.permission-button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 10px;
+  border: 1px solid #24292f;
+  border-radius: 7px;
+  background: #24292f;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.permission-button:hover:not(:disabled) {
+  background: #3a414a;
+  border-color: #3a414a;
+}
+
+.permission-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.permission-button:focus-visible {
+  outline: 2px solid #78a8ff;
+  outline-offset: 2px;
+}
+
+.permission-error {
+  margin-top: 8px;
+  color: #8f2b22;
+  font-size: 12px;
+}
+
 .command-list {
   display: grid;
   gap: 8px;

@@ -12,7 +12,7 @@
         <img src="icons/icon-128.png" width="32" height="32" alt="" class="app-icon" />
         <div class="title-block">
           <h1>Open Browser Use</h1>
-          <p class="subtitle">Chrome automation bridge</p>
+          <p class="subtitle">Browser automation bridge</p>
         </div>
         <span class="version-pill" id="extension-version" aria-label="Extension version"></span>
       </header>
@@ -37,6 +37,20 @@
           </div>
         </dl>
         <p class="error-message" id="error-message" hidden></p>
+      </section>
+
+      <section class="panel interaction-panel" id="interaction-panel" aria-labelledby="interaction-title" hidden>
+        <div class="section-heading">
+          <span class="eyebrow" id="interaction-title">Page Interaction</span>
+          <span class="permission-pill" id="interaction-status">Checking</span>
+        </div>
+        <p class="permission-copy" id="interaction-copy">
+          Allow Open Browser Use to read page content, fill forms, and interact with ordinary websites.
+        </p>
+        <button class="permission-button" id="enable-interaction" type="button">
+          Enable and reload current tab
+        </button>
+        <p class="permission-error" id="interaction-error" hidden></p>
       </section>
 
       <section class="panel" aria-labelledby="cli-title">
