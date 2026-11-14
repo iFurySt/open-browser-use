@@ -71,6 +71,16 @@ open-browser-use install-manifest --browser <bitbrowser-instance-id>
 Use `open-browser-use profiles --connected --json` to see BitBrowser instance
 ids in the `browserInstance` field once the instance is detectable.
 
+For Helium on macOS, install the extension from the Chrome Web Store inside
+Helium, then register the native host manifest in Helium's user-data directory:
+
+```sh
+open-browser-use install-manifest --browser helium
+```
+
+Helium also reads Chrome's user-level `NativeMessagingHosts` directory as a
+fallback, so an existing Chrome registration keeps working until it is removed.
+
 While the Chrome Web Store item is unavailable or pending review, use the release ZIP path:
 
 ```sh
@@ -89,8 +99,8 @@ Repair only the native host manifest:
 open-browser-use install-manifest
 ```
 
-Use `--browser chrome-beta` or `--browser <bitbrowser-instance-id>` to repair a
-non-default browser.
+Use `--browser chrome-beta`, `--browser helium`, or
+`--browser <bitbrowser-instance-id>` to repair a non-default browser.
 
 Print the manifest without installing:
 
