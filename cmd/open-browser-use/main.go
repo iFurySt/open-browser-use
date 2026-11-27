@@ -1466,6 +1466,9 @@ func newOpenTabCommand() *cobra.Command {
 					return err
 				}
 				output["navigate"] = navigateResponse["result"]
+				if notice, ok := navigateResponse["webmcpNotice"]; ok {
+					output["webmcpNotice"] = notice
+				}
 			}
 			return writeJSON(output)
 		},
@@ -1935,6 +1938,9 @@ func (runner *actionRunner) runOpenTabAction(args []string) (map[string]any, int
 			return nil, 0, err
 		}
 		output["navigate"] = navigate["result"]
+		if notice, ok := navigate["webmcpNotice"]; ok {
+			output["webmcpNotice"] = notice
+		}
 	}
 	return map[string]any{"result": output}, tabID, nil
 }
@@ -1974,13 +1980,15 @@ func (runner *actionRunner) runWaitLoadAction(args []string) (map[string]any, in
 		return nil, 0, err
 	}
 	if _, _, err := runner.invoke("executeCdp", map[string]any{
-		"target":        map[string]any{"tabId": tabID},
-		"method":        "Page.enable",
-		"commandParams": map[string]any{},
+		"target":              map[string]any{"tabId": tabID},
+		"method":              "Page.enable",
+		"commandParams":       map[string]any{},
+		"includeWebMcpNotice": false,
 	}); err != nil {
 		return nil, 0, err
 	}
 	deadline := time.Now().Add(runner.options.timeout)
+	output := map[string]any{}
 	for {
 		response, _, err := runner.invoke("executeCdp", map[string]any{
 			"target": map[string]any{"tabId": tabID},
@@ -1994,8 +2002,12 @@ func (runner *actionRunner) runWaitLoadAction(args []string) (map[string]any, in
 			return nil, 0, err
 		}
 		readyState := runtimeEvaluateString(response)
+		if notice, ok := response["webmcpNotice"]; ok {
+			output["webmcpNotice"] = notice
+		}
 		if readyState == "complete" || (state == "domcontentloaded" && readyState == "interactive") {
-			return map[string]any{"result": map[string]any{"readyState": readyState}}, tabID, nil
+			output["result"] = map[string]any{"readyState": readyState}
+			return output, tabID, nil
 		}
 		if time.Now().After(deadline) {
 			return nil, 0, fmt.Errorf("timed out waiting for %s in tab %d", state, tabID)
@@ -2353,6 +2365,12 @@ func invokeWithProfile(socketPath string, socketDir string, browser string, prof
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 	applySessionDefaults(params, defaultCLISessionID)
+	switch method {
+	case "claimUserTab", "getTabs", "executeCdp":
+		if _, set := params["includeWebMcpNotice"]; !set {
+			params["includeWebMcpNotice"] = true
+		}
+	}
 	requestID := "cli-1"
 	request := map[string]any{
 		"jsonrpc": "2.0",

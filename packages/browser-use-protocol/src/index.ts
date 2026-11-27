@@ -69,6 +69,7 @@ export type JsonRpcResponse =
       jsonrpc: "2.0";
       id: number | string | null;
       result: JsonValue;
+      webmcpNotice?: { tabId: number; count: number; names: string[]; listMethod: "webmcp_list_tools" };
     }
   | {
       jsonrpc: "2.0";

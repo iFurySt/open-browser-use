@@ -7,6 +7,7 @@ const HEARTBEAT_ALARM_NAME = "open-browser-use-heartbeat";
 const DEFAULT_CDP_TIMEOUT_MS = 10_000;
 const DEFAULT_WEBMCP_TIMEOUT_MS = 10_000;
 const DEFAULT_WEBMCP_LIST_TIMEOUT_MS = 5_000;
+const WEBMCP_NOTICE_TIMEOUT_MS = 300;
 const WEBMCP_TIMEOUT_GRACE_MS = 1_500;
 const CURSOR_ARRIVAL_TIMEOUT_MS = 1_000;
 const MAX_USER_TABS = 1000;
@@ -57,7 +58,12 @@ class JsonRpcPeer {
       }
       const result = await handler.call(this.handlers, message.params ?? {});
       if (id !== undefined) {
-        this.transport.sendMessage({ jsonrpc: "2.0", id, result: result ?? {} });
+        const response = { jsonrpc: "2.0", id, result: result ?? {} };
+        if (message.params?.includeWebMcpNotice === true) {
+          const notice = await this.handlers.webMcpNotice(message.method, message.params, result).catch(() => null);
+          if (notice) response.webmcpNotice = notice;
+        }
+        this.transport.sendMessage(response);
       }
     } catch (error) {
       if (id !== undefined) {
@@ -300,6 +306,7 @@ class BrowserBackend {
   constructor({ webMcpGate = null } = {}) {
     this.store = new SessionStore();
     this.webMcpGate = webMcpGate;
+    this.webMcpPreviews = new Map();
     this.attachedTabs = new Set();
     this.activeTabsBySession = new Map();
     this.cursorByTabId = new Map();
@@ -518,6 +525,7 @@ class BrowserBackend {
     for (const tabId of [...agentTabsToClose, ...userTabsToRelease, ...deliverableTabs]) {
       delete sessionState.tabOrigins[String(tabId)];
       this.cursorByTabId.delete(tabId);
+      this.webMcpPreviews.delete(tabId);
     }
     if (handoffTabs.length > 0) {
       sessionState.activeTabId = handoffTabs.includes(sessionState.activeTabId)
@@ -586,6 +594,44 @@ class BrowserBackend {
       }
       return await chrome.debugger.sendCommand(target, params.method, params.commandParams ?? {});
     });
+  }
+
+  async webMcpNotice(method, params, result) {
+    let tabId;
+    if (method === "claimUserTab") tabId = result.id;
+    if (method === "getTabs") tabId = result.find((tab) => tab.active)?.id;
+    if (method === "executeCdp") tabId = params.target?.tabId;
+    if (!Number.isInteger(tabId) || !(await this.webMcpGate?.enabled())) return;
+
+    const sessionId = params.session_id;
+    let state = this.webMcpPreviews.get(tabId);
+    if (state?.sessionId !== sessionId) {
+      state = { sessionId };
+      this.webMcpPreviews.set(tabId, state);
+    }
+    // Only the newest concurrent sample may advance this tab's notice.
+    const sample = Symbol();
+    state.sample = sample;
+    const preview = await withWebMcpTimeout(WEBMCP_NOTICE_TIMEOUT_MS, async () => {
+      await this.requireSessionTab({ ...params, tabId }, "WebMCP notice");
+      const value = await this.sendWebMcpRequest(tabId, { action: "preview" }, WEBMCP_NOTICE_TIMEOUT_MS);
+      await this.requireSessionTab({ ...params, tabId }, "WebMCP notice");
+      return value;
+    });
+    if (!(await this.webMcpGate.enabled()) || this.webMcpPreviews.get(tabId) !== state || state.sample !== sample) return;
+    if (
+      !preview || typeof preview.documentId !== "string" || preview.documentId.length > 128 ||
+      !Number.isSafeInteger(preview.version) || !Number.isSafeInteger(preview.count) || preview.count < 0 ||
+      !Array.isArray(preview.names) || preview.names.length !== Math.min(12, preview.count) ||
+      !preview.names.every((name) => typeof name === "string" && name.length <= 80)
+    ) return;
+    const key = JSON.stringify([preview.documentId, preview.version, preview.count, preview.names]);
+    if (state.key === key) return;
+    const wasAvailable = state.available;
+    state.key = key;
+    state.available = preview.count > 0;
+    if (!state.available && !wasAvailable) return;
+    return { tabId, count: preview.count, names: preview.names, listMethod: "webmcp_list_tools" };
   }
 
   async webmcp_list_tools(params) {
@@ -1553,6 +1599,7 @@ const webMcpGate = new WebMcpGate();
 const backend = new BrowserBackend({ webMcpGate });
 const transport = new NativeTransport(NATIVE_HOST_NAME);
 const peer = new JsonRpcPeer(transport, backend);
+chrome.tabs.onRemoved.addListener((tabId) => backend.webMcpPreviews.delete(tabId));
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "GET_NATIVE_HOST_STATUS") {
     const status = transport.getStatus();
