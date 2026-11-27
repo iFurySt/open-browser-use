@@ -490,3 +490,49 @@ test("WebMCP backend rejects calls when its gate is inactive", async () => {
   const info = json(await backend.getInfo());
   assert.deepEqual(info.capabilities.tab, []);
 });
+
+test("tab notices detect late registration and removal without replacing an invocation handle", async () => {
+  const tools = [];
+  const modelContext = createModelContext(tools);
+  const { runtime } = await loadBridgeHarness({ modelContext });
+  const BrowserBackend = await loadBrowserBackend();
+  let enabled = true;
+  const backend = new BrowserBackend({ webMcpGate: { enabled: async () => enabled } });
+  const params = { session_id: "owner", target: { tabId: 7 } };
+  backend.requireSessionTab = async ({ session_id, tabId }) => {
+    assert.equal(session_id, "owner");
+    assert.equal(tabId, 7);
+  };
+  backend.sendWebMcpRequest = async (tabId, request) => {
+    assert.equal(tabId, 7);
+    const reply = await runtime.sendToContent({ type: "OPEN_BROWSER_USE_WEBMCP_REQUEST", ...request });
+    assert.equal(reply.ok, true);
+    return reply.result;
+  };
+  const sample = () => backend.webMcpNotice("executeCdp", params);
+  assert.equal(await backend.webMcpNotice("claimUserTab", params, { id: 7 }), undefined);
+  tools.push({ name: "post_comment", description: "Post a comment", __execute: () => "called" });
+  modelContext.emitToolChange();
+  const listed = await backend.webmcp_list_tools({ ...params, tabId: 7 });
+  const { registration_id } = listed.tools[0];
+  const notice = await sample();
+  assert.deepEqual(json(notice), { tabId: 7, count: 1, names: ["post_comment"], listMethod: "webmcp_list_tools" });
+  assert.equal(await sample(), undefined);
+  assert.deepEqual(json(await backend.webmcp_invoke_tool({
+    ...params, tabId: 7, registration_id, tool_name: "post_comment", input: {}
+  })), { result: "called" });
+  tools.pop();
+  modelContext.emitToolChange();
+  assert.equal((await sample()).count, 0);
+  assert.equal(await sample(), undefined);
+  tools.push(...Array.from({ length: 14 }, (_, i) => ({ name: String(i).padEnd(90, "x") })));
+  modelContext.emitToolChange();
+  const bounded = await sample();
+  assert.equal(bounded.count, 14);
+  assert.equal(bounded.names.length, 12);
+  assert.equal(bounded.names[0].length, 80);
+  backend.sendWebMcpRequest = () => assert.fail("unowned and disabled tabs must not be sampled");
+  assert.equal(await backend.webMcpNotice("getUserTabs", params, [{ id: 9, active: true }]), undefined);
+  enabled = false;
+  assert.equal(await sample(), undefined);
+});

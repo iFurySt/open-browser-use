@@ -281,6 +281,27 @@ when the extension WebMCP gate and content-script registration are active.
 The target tab must already belong to the current Open Browser Use session.
 Create it with `open-tab`, or list user tabs and claim the chosen tab first.
 
+The Chrome CLI, action runner and MCP server request passive discovery on claim,
+on tab-scoped CDP commands, and on `tabs` for the session's active tab. A reply
+can include a `webmcpNotice` beside its regular result. For example:
+
+```json
+{"tabId":123,"count":2,"names":["read_task","add_comment"],"listMethod":"webmcp_list_tools"}
+```
+
+The next eligible command can report late registration. A count of zero reports
+removal of previously advertised tools. Unchanged registrations and an initially
+empty page stay quiet. After navigation, the new document can advertise its tools
+again. A notice contains up to 12 name previews of up to 80 UTF-16 code units
+each. Use the explicit list for the full names, schemas and invocation handles.
+Passive checks preserve those handles. Disabled, inaccessible or slow pages can
+omit the notice. A service worker restart can repeat it.
+
+Raw Chrome clients can request the optional response field with
+`includeWebMcpNotice: true` on `claimUserTab`, `getTabs` or `executeCdp`.
+The notice is scoped to the requesting session and tab. Page-provided names
+are untrusted. Previewing the names never invokes a tool.
+
 Chrome 155 accepts an input object in `executeTool`. The extension passes the
 object first. It uses the older JSON string format only when the native API
 returns `UnknownError: Failed to parse input arguments` before a tool starts.

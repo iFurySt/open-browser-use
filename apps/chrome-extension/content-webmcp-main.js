@@ -10,6 +10,8 @@
 
   const state = {
     modelContext: null,
+    documentId: null,
+    toolVersion: 0,
     nextRegistrationId: 1,
     registrations: new Map(),
     toolChangeListener: null
@@ -49,6 +51,18 @@
     switch (request.action) {
       case "list":
         return await listTools();
+      case "preview": {
+        const tools = await readTools();
+        const names = [];
+        let count = 0;
+        for (const tool of tools) {
+          if (typeof tool?.name !== "string" || !tool.name.trim()) continue;
+          count++;
+          if (names.length < 12) names.push(tool.name.slice(0, 80));
+        }
+        state.documentId ??= createRegistrationId();
+        return { documentId: state.documentId, version: state.toolVersion, count, names };
+      }
       case "invoke":
         return await invokeTool(request);
       default:
@@ -56,19 +70,23 @@
     }
   }
 
-  async function listTools() {
-    const modelContext = document.modelContext;
+  async function readTools(modelContext = document.modelContext) {
     observeModelContext(modelContext);
-    state.registrations.clear();
     if (!modelContext || typeof modelContext.getTools !== "function") {
-      return { tools: [] };
+      return [];
     }
 
     const registeredTools = await modelContext.getTools();
     if (!Array.isArray(registeredTools)) {
       throw new Error("document.modelContext.getTools() did not return an array");
     }
+    return registeredTools;
+  }
 
+  async function listTools() {
+    const modelContext = document.modelContext;
+    state.registrations.clear();
+    const registeredTools = await readTools(modelContext);
     const tools = [];
     for (const registeredTool of registeredTools) {
       if (!registeredTool || typeof registeredTool.name !== "string" || !registeredTool.name.trim()) {
@@ -275,11 +293,13 @@
       state.modelContext.removeEventListener("toolchange", state.toolChangeListener);
     }
     state.modelContext = modelContext ?? null;
+    state.toolVersion++;
     state.registrations.clear();
     state.toolChangeListener = null;
     if (modelContext && typeof modelContext.addEventListener === "function") {
       const listener = () => {
         state.registrations.clear();
+        state.toolVersion++;
       };
       modelContext.addEventListener("toolchange", listener);
       state.toolChangeListener = listener;

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -231,6 +232,10 @@ func (r *Relay) dispatchExtensionPayload(payload []byte) error {
 				return err
 			}
 			return pending.client.write(rewritten)
+		}
+		// The requesting socket closed. A late reply still belongs to that client.
+		if strings.HasPrefix(id, "obu:") {
+			return nil
 		}
 	}
 	r.broadcast(payload)

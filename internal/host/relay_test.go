@@ -110,6 +110,13 @@ func TestRelayBroadcastsExtensionNotificationsToSDKClients(t *testing.T) {
 	defer secondClient.Close()
 	waitForClients(t, relay, 2)
 
+	// A reply for a closed request must not appear on either remaining socket.
+	if err := wire.WriteJSON(extensionToHostWriter, map[string]any{
+		"jsonrpc": "2.0", "id": "obu:closed", "result": "private reply",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	notification := map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "onDownloadChange",

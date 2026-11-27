@@ -1523,11 +1523,11 @@ func TestCobraRunActionPlan(t *testing.T) {
 					}}}
 				}
 			}
-			if err := wire.WriteJSON(conn, map[string]any{
-				"jsonrpc": "2.0",
-				"id":      request["id"],
-				"result":  result,
-			}); err != nil {
+			reply := map[string]any{"jsonrpc": "2.0", "id": request["id"], "result": result}
+			if params["includeWebMcpNotice"] == true {
+				reply["webmcpNotice"] = map[string]any{"tabId": 123, "count": 1}
+			}
+			if err := wire.WriteJSON(conn, reply); err != nil {
 				_ = conn.Close()
 				serverDone <- err
 				return
@@ -1568,6 +1568,10 @@ finalize-tabs []
 	}
 	if len(got.Steps) != 5 {
 		t.Fatalf("expected 5 action steps, got %d", len(got.Steps))
+	}
+	openResult, _ := got.Steps[1].Response["result"].(map[string]any)
+	if openResult["webmcpNotice"] == nil || got.Steps[2].Response["webmcpNotice"] == nil {
+		t.Fatal("open-tab and wait-load must preserve WebMCP notices")
 	}
 	if got.Steps[1].Action != "open-tab" || got.Steps[1].TabID != 123 {
 		t.Fatalf("expected open-tab step to capture tab id, got %#v", got.Steps[1])

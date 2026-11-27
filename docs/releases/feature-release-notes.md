@@ -1,5 +1,11 @@
 # 功能发布记录
 
+## 2026-11
+
+| 日期 | 功能域 | 用户价值 | 变更摘要 |
+| --- | --- | --- | --- |
+| 2026-11-27 | Chrome WebMCP discovery | Agents can see when an owned page offers tools. | Claim and tab command replies can report a bounded preview when registrations appear, change, or disappear. Explicit listing supplies the invocation handles. |
+
 ## 2026-10
 
 | 日期 | 功能域 | 用户价值 | 变更摘要 |

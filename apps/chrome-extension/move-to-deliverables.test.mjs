@@ -55,6 +55,7 @@ function createChromeFake() {
       }
     },
     tabs: {
+      onRemoved: { addListener() {} },
       async get(tabId) {
         const tab = state.tabs.get(tabId);
         if (!tab) throw new Error(`No tab ${tabId}`);
